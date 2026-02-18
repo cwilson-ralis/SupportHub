@@ -34,9 +34,9 @@ public interface ITicketService
 
    - **`TicketDto`** (full read model): Id, Subject, Status, Priority, Source, CompanyId, CompanyName, AssignedAgentId, AssignedAgentName, RequesterEmail, RequesterName, CreatedAt, UpdatedAt, FirstResponseAt, ResolvedAt, ClosedAt, Messages (list), InternalNotes (list), Attachments (list)
    - **`TicketListDto`** (grid row): Id, Subject, Status, Priority, Source, CompanyName, AssignedAgentName, RequesterName, RequesterEmail, CreatedAt, UpdatedAt, MessageCount, HasUnreadMessages
-   - **`CreateTicketDto`**: CompanyId, Subject, Priority, RequesterEmail, RequesterName, InitialMessage (string), Source (defaults to Portal)
-   - **`UpdateTicketDto`**: Subject, Priority
-   - **`TicketFilterDto`**: CompanyId?, Status?, Priority?, AssignedAgentId?, SearchTerm?, DateFrom?, DateTo?, PageNumber (default 1), PageSize (default 25), SortBy, SortDirection
+   - **`CreateTicketDto`**: CompanyId, DivisionId?, Subject, Priority, SystemApplication?, IssueType?, RequesterEmail, RequesterName, InitialMessage (string, required, min 20 chars), Source (defaults to Portal), InitialTags (List\<string\>?)
+   - **`UpdateTicketDto`**: Subject, Priority, DivisionId?, SystemApplication?, IssueType?
+   - **`TicketFilterDto`**: CompanyId?, DivisionId?, Status?, Priority?, AssignedAgentId?, Tag?, SearchTerm?, DateFrom?, DateTo?, PageNumber (default 1), PageSize (default 25), SortBy, SortDirection
 
 3. Create `PagedResult<T>` in `Core/DTOs/`:
 
@@ -56,18 +56,18 @@ public record PagedResult<T>(
 4. Implement `TicketService` in `Infrastructure/Services/`:
 
    **Business rules to enforce:**
-   - On `CreateAsync`: Status defaults to `New`. Source defaults to `Portal` (email source handled in Phase 3). Create the initial `TicketMessage` from the `InitialMessage` field.
+   - On `CreateAsync`: Status defaults to `New`. Source defaults to `Portal` (email source handled in Phase 3). Create the initial `TicketMessage` from the `InitialMessage` field. If `InitialTags` are provided, create `TicketTag` records. If `DivisionId` is not provided, leave null (ticket goes to General queue until routing assigns it).
    - On `ChangeStatusAsync`:
      - Moving to `Resolved` → set `ResolvedAt = DateTimeOffset.UtcNow`
      - Moving to `Closed` → set `ClosedAt = DateTimeOffset.UtcNow`
      - Reopening (from Resolved/Closed → Open) → clear `ResolvedAt` and `ClosedAt`
    - On `AssignAsync`: If assigning for the first time and status is `New`, auto-change status to `Open`
    - All mutations verify company access using the current user's company assignments (except SuperAdmin)
-   - `GetListAsync` must filter by the user's assigned companies (SuperAdmin sees all)
+   - `GetListAsync` must filter by the user's assigned companies (SuperAdmin sees all); support filtering by `Tag`
    - Use optimistic concurrency via `RowVersion` on updates — return a friendly error on conflict
 
 5. Create `FluentValidation` validators:
-   - `CreateTicketValidator`: Subject required (max 500), RequesterEmail valid format, CompanyId > 0
+   - `CreateTicketValidator`: Subject required (max 500), RequesterEmail valid format, CompanyId > 0, InitialMessage minimum 20 characters (enforces quality for portal submissions)
    - `UpdateTicketValidator`: Subject max 500 if provided
 
 6. Write unit tests for `TicketService`:
@@ -105,7 +105,36 @@ public interface IInternalNoteService
 
 ---
 
-## Task 2.3 — File Attachments
+## Task 2.3 — Ticket Tagging
+
+### Instructions
+
+1. Create `ITicketTagService` in `Core/Interfaces/`:
+
+```csharp
+public interface ITicketTagService
+{
+    Task<Result<List<string>>> GetTagsForTicketAsync(int ticketId);
+    Task<Result<bool>> AddTagAsync(int ticketId, string tag);
+    Task<Result<bool>> RemoveTagAsync(int ticketId, string tag);
+    Task<Result<List<string>>> GetCommonTagsForCompanyAsync(int companyId);
+}
+```
+
+2. **Implement `TicketTagService`:**
+   - Normalize tags to lowercase, trimmed
+   - Enforce max tag length (100 chars)
+   - Verify company access before modifying
+   - `GetCommonTagsForCompanyAsync` returns distinct tags used by the company (sorted by usage count desc), used to power autocomplete in the UI
+   - Built-in well-known tags to suggest: `new-hire`, `termination`, `access-request`, `empower`, `salesforce`, `outlook`, `hardware`
+
+3. **Update `TicketDto`** to include `List<string> Tags` (read from `TicketTag` records).
+
+4. **Update `TicketListDto`** to include `List<string> Tags` (for filter display).
+
+---
+
+## Task 2.4 — File Attachments
 
 ### Instructions
 
@@ -158,7 +187,7 @@ public interface IAttachmentService
 
 ---
 
-## Task 2.4 — Canned Responses
+## Task 2.5 — Canned Responses
 
 ### Instructions
 
@@ -188,15 +217,15 @@ public interface ICannedResponseService
 
 ---
 
-## Task 2.5 — Blazor UI: Ticket List Page
+## Task 2.6 — Blazor UI: Ticket List Page
 
 ### Instructions
 
 Create `Pages/Tickets/TicketList.razor` and `TicketList.razor.cs`:
 
 1. **Layout:**
-   - Top bar: Company selector dropdown (filtered to user's assigned companies, SuperAdmin sees all), "New Ticket" button
-   - Filter bar: Status multi-select chips, Priority dropdown, Assigned Agent dropdown, Date range picker, Search text box
+   - Top bar: Company selector dropdown (filtered to user's assigned companies, SuperAdmin sees all), Division/Queue dropdown (filter by routing queue), "New Ticket" button
+   - Filter bar: Status multi-select chips, Priority dropdown, Assigned Agent dropdown, Tag chips, Date range picker, Search text box
    - Main content: `MudDataGrid<TicketListDto>` with server-side pagination and sorting
 
 2. **Grid Columns:**
@@ -204,6 +233,8 @@ Create `Pages/Tickets/TicketList.razor` and `TicketList.razor.cs`:
    - Subject (truncated to ~60 chars)
    - Status (color-coded `MudChip`: New=blue, Open=green, AwaitingCustomer=orange, Resolved=gray, etc.)
    - Priority (icon + text: Urgent=red, High=orange, Medium=yellow, Low=gray)
+   - Queue/Division (show "General" if unassigned)
+   - Tags (first 2 tags as small chips, "…" if more)
    - Requester Name
    - Assigned Agent (show "Unassigned" if null with a distinct style)
    - Created Date (relative time, e.g., "2 hours ago", with tooltip showing full date)
@@ -222,7 +253,7 @@ Create `Pages/Tickets/TicketList.razor` and `TicketList.razor.cs`:
 
 ---
 
-## Task 2.6 — Blazor UI: Ticket Detail Page
+## Task 2.7 — Blazor UI: Ticket Detail Page
 
 ### Instructions
 
@@ -244,12 +275,16 @@ Create `Pages/Tickets/TicketDetail.razor` and `TicketDetail.razor.cs`:
    **Right column (30% width) — Properties Panel:**
    - Status dropdown (with allowed transitions)
    - Priority dropdown
+   - Queue / Division dropdown (assigns ticket to a division; "General" if unassigned)
    - Assigned Agent dropdown (list of agents assigned to this company)
+   - Tags editor: display existing tags as removable chips, add new tags via autocomplete (suggest company common tags)
    - Requester info: name, email (read-only)
    - Company name (read-only)
+   - System/Application affected (read-only — set at creation; editable by Agent+)
+   - Issue type (read-only — set at creation; editable by Agent+)
    - Source badge (Email/Portal/API)
    - Created date, Last updated date
-   - SLA status (placeholder for Phase 4 — show "SLA not configured" for now)
+   - SLA status (placeholder for Phase 5 — show "SLA not configured" for now)
    - "Delete Ticket" button (soft-delete, with confirmation dialog, Admin/SuperAdmin only)
 
 2. **Behavior:**
@@ -261,29 +296,34 @@ Create `Pages/Tickets/TicketDetail.razor` and `TicketDetail.razor.cs`:
 
 ---
 
-## Task 2.7 — Blazor UI: Create Ticket Dialog
+## Task 2.8 — Blazor UI: Create Ticket Dialog
 
 ### Instructions
 
 Create a `MudDialog` component `CreateTicketDialog.razor`:
 
-1. **Fields:**
-   - Company (dropdown, required — pre-selected if user is on a company-filtered view)
-   - Subject (text, required)
-   - Priority (dropdown, defaults to Medium)
+Per the design-overview, the structured web form is the **primary intake channel** because it dramatically improves ticket quality vs. email submissions. Enforce required fields here.
+
+1. **Fields (in order):**
+   - Company / Entity (dropdown, required — pre-selected if user is on a company-filtered view)
+   - System / Application Affected (dropdown, required: Empower, Salesforce, Outlook, Hardware, Other)
+   - Issue Type (dropdown, required: Access Request, Error/Bug, How-to Question, Training, New Hire, Termination, Other)
+   - Subject (text, required, max 500)
+   - Description / Initial Message (multiline text, required, minimum 20 characters — hint: "Please describe the issue in detail to help us route and resolve it quickly")
+   - Attachments (file upload, optional — highlight this since users frequently submit screenshots; show drag-and-drop zone)
+   - Priority (dropdown, defaults to Medium — visible to Agents, hidden from end users if this form is ever opened as a customer-facing form)
    - Requester Name (text, required — with autocomplete from existing requester emails in the company)
    - Requester Email (email, required)
-   - Description / Initial Message (multiline text, required)
-   - Attachments (file upload, optional)
 
 2. **Behavior:**
-   - Client-side validation with `FluentValidation`
+   - Client-side validation with `FluentValidation` (all required fields must be filled before submit is enabled)
+   - Issue Type automatically pre-fills a suggested tag (e.g., New Hire → suggest `new-hire` tag, Termination → suggest `termination` tag)
    - On submit, call `ITicketService.CreateAsync` then navigate to the new ticket detail page
-   - Show validation errors inline
+   - Show validation errors inline with field highlights
 
 ---
 
-## Task 2.8 — API Controllers
+## Task 2.9 — API Controllers
 
 ### Instructions
 
@@ -300,12 +340,16 @@ PATCH  /api/v1/tickets/{id}/priority       → ChangePriority
 DELETE /api/v1/tickets/{id}      → SoftDelete
 
 POST   /api/v1/tickets/{id}/messages       → AddReply
+POST   /api/v1/tickets/{id}/messages       → AddReply
 POST   /api/v1/tickets/{id}/notes          → AddInternalNote
 GET    /api/v1/tickets/{id}/notes          → GetNotes
 DELETE /api/v1/tickets/{id}/notes/{noteId} → DeleteNote
 
 POST   /api/v1/tickets/{id}/attachments    → Upload
 GET    /api/v1/tickets/{id}/attachments/{attachmentId}  → Download
+
+POST   /api/v1/tickets/{id}/tags           → AddTag
+DELETE /api/v1/tickets/{id}/tags/{tag}     → RemoveTag
 ```
 
 2. All endpoints require `[Authorize(Policy = "AgentOrAbove")]` minimum.
@@ -324,7 +368,7 @@ DELETE /api/v1/canned-responses/{id}               → Delete (AdminOrAbove)
 
 ---
 
-## Task 2.9 — Navigation and Layout Updates
+## Task 2.10 — Navigation and Layout Updates
 
 ### Instructions
 
@@ -335,9 +379,11 @@ DELETE /api/v1/canned-responses/{id}               → Delete (AdminOrAbove)
    - Admin section (visible to Admin/SuperAdmin):
      - Companies
      - Users
+     - Divisions / Queues (placeholder, grayed out until Phase 4)
+     - Routing Rules (placeholder, grayed out until Phase 4)
      - Canned Responses
-     - SLA Policies (placeholder for Phase 4)
-     - Reports (placeholder for Phase 5)
+     - SLA Policies (placeholder for Phase 5)
+     - Reports (placeholder for Phase 6)
 
 2. Add a top bar with:
    - App name/logo
@@ -353,14 +399,17 @@ DELETE /api/v1/canned-responses/{id}               → Delete (AdminOrAbove)
 
 ## Acceptance Criteria for Phase 2
 
-- [ ] Agents can create tickets via the portal with all required fields
-- [ ] Ticket list page displays tickets with filtering, sorting, and pagination
+- [ ] Agents can create tickets via the portal with all required structured fields (company, system/app, issue type, subject, description)
+- [ ] Description field enforces minimum 20-character validation
+- [ ] Issue type auto-suggests relevant tags on ticket creation
+- [ ] Ticket list page displays tickets with filtering (including by tag and division), sorting, and pagination
 - [ ] Ticket detail page shows full conversation thread with correct visual styling
 - [ ] Agents can reply to tickets (message is saved, appears in timeline)
 - [ ] Agents can add internal notes (visually distinct from messages)
 - [ ] Agents can upload and download file attachments on tickets
 - [ ] Agents can insert canned responses into replies
-- [ ] Properties panel allows changing status, priority, and assignment with immediate save
+- [ ] Properties panel allows changing status, priority, division, and assignment with immediate save
+- [ ] Tags can be added and removed on tickets; autocomplete suggests common company tags
 - [ ] Optimistic concurrency prevents silent overwrites
 - [ ] Company-level access control is enforced (agents only see tickets for their assigned companies)
 - [ ] API endpoints work independently (testable via Swagger)

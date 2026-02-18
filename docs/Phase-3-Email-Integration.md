@@ -79,9 +79,10 @@ public interface IEmailIngestionService
       c. Try to match to an existing ticket (see matching logic below)
       d. If matched → append as a new TicketMessage to the existing ticket
       e. If not matched → create a new Ticket with the email as the first message
-      f. Process attachments (see Task 3.3)
-      g. Mark the email as read in Graph API: PATCH /users/{mailbox}/messages/{id} → isRead = true
-      h. Move the email to a "Processed" folder (create if it doesn't exist)
+      f. Run AI classification step (see Task 3.5) for newly created email tickets where routing rules did not match. If classification returns a result, apply suggested DivisionId, SystemApplication, IssueType, and Tags to the ticket.
+      g. Process attachments (see Task 3.3)
+      h. Mark the email as read in Graph API: PATCH /users/{mailbox}/messages/{id} → isRead = true
+      i. Move the email to a "Processed" folder (create if it doesn't exist)
    4. Log all actions (created ticket #X, appended to ticket #Y, skipped email Z)
    ```
 
@@ -192,7 +193,86 @@ public interface IEmailSendingService
 
 ---
 
-## Task 3.5 — Integrate Outbound Email into Reply Flow
+## Task 3.5 — AI Classification Service
+
+### Instructions
+
+Email-submitted tickets often lack structured routing data (no system identified, no issue type — sometimes just a screenshot). The AI classification step provides intelligent routing for these tickets using Azure OpenAI.
+
+1. **Add `AzureOpenAISettings`** configuration class in `Core/`:
+
+```csharp
+public class AzureOpenAISettings
+{
+    public string Endpoint { get; set; } = string.Empty;       // Azure OpenAI endpoint URL
+    public string ApiKey { get; set; } = string.Empty;
+    public string DeploymentName { get; set; } = "gpt-4o-mini"; // image-capable model
+    public bool Enabled { get; set; } = true;
+    public int MaxTokens { get; set; } = 500;
+}
+```
+
+Register in `appsettings.json` under `"AzureOpenAI"` (secret values via environment variables / User Secrets).
+
+2. **Create `IAiClassificationService`** in `Core/Interfaces/`:
+
+```csharp
+public interface IAiClassificationService
+{
+    Task<AiClassificationResult?> ClassifyAsync(
+        string subject,
+        string body,
+        IEnumerable<string> attachmentContentTypes,
+        CancellationToken cancellationToken);
+}
+
+public record AiClassificationResult(
+    string? SuggestedSystemApplication,   // e.g., "Empower", "Salesforce", "Outlook"
+    IssueType? SuggestedIssueType,
+    List<string> SuggestedTags,           // e.g., ["termination", "access-request"]
+    string? SuggestedDivisionName,        // matched to a known division name
+    float Confidence,                     // 0.0–1.0
+    string? RawResponse);                 // store for audit/tuning
+```
+
+3. **Implement `AiClassificationService`** in `Infrastructure/Services/`:
+
+   **Requirements:**
+   - Use `Azure.AI.OpenAI` NuGet package (or `Microsoft.SemanticKernel` — choose one and document)
+   - Model **must** be image-capable (GPT-4o-mini supports vision) — critical because users frequently submit screenshot-only tickets
+   - For tickets with image attachments (PNG, JPG, GIF), include the images in the prompt using base64 or URL references where available
+   - System prompt (define as a constant/embedded resource):
+
+     ```
+     You are a support ticket classifier. Given a support ticket subject, body, and any attached images,
+     identify:
+     1. The system/application affected (e.g., Empower, Salesforce, Outlook, Hardware, Other)
+     2. The issue type (AccessRequest, ErrorOrBug, HowToQuestion, Training, NewHire, Termination, Other)
+     3. Relevant tags from: new-hire, termination, access-request, empower, salesforce, outlook, hardware
+     4. The suggested support queue (Tech Support, App Support, New Hire / Termination, General)
+     5. Confidence (0.0–1.0)
+     Respond as JSON only.
+     ```
+
+   - Parse the JSON response into `AiClassificationResult`
+   - If parsing fails or confidence < 0.5, return `null` (fall through to General queue)
+   - Use `Polly` for transient fault handling (retry 2 times, timeout 30 seconds)
+   - **Only call the AI when needed** — skip if: `AzureOpenAISettings.Enabled` is false, or the ticket already has routing data from structured form fields
+
+4. **Store AI classification decisions** for audit and future model tuning:
+   - Add `string? AiClassificationJson` (nvarchar(max)) to `Ticket` entity — stores the raw `AiClassificationResult` as JSON when AI was used
+   - `Ticket.AiClassified` (bool, added in Phase 1) is set to `true` when AI was applied
+
+5. **Unit tests:**
+   - Test: valid AI response is parsed correctly
+   - Test: low-confidence response returns null
+   - Test: service is skipped when disabled
+   - Test: transient failure triggers retry
+   - Mock `Azure.AI.OpenAI` client
+
+---
+
+## Task 3.6 — Integrate Outbound Email into Reply Flow
 
 ### Instructions
 
@@ -222,7 +302,7 @@ public interface IEmailSendingService
 
 ---
 
-## Task 3.6 — Hangfire Background Jobs
+## Task 3.7 — Hangfire Background Jobs
 
 ### Instructions
 
@@ -285,7 +365,7 @@ app.Services.GetRequiredService<IRecurringJobManager>()
 
 ---
 
-## Task 3.7 — Email Processing Monitoring
+## Task 3.8 — Email Processing Monitoring
 
 ### Instructions
 
@@ -310,7 +390,7 @@ app.Services.GetRequiredService<IRecurringJobManager>()
 
 ---
 
-## Task 3.8 — Testing
+## Task 3.9 — Testing
 
 ### Instructions
 
@@ -353,4 +433,8 @@ app.Services.GetRequiredService<IRecurringJobManager>()
 - [ ] Email processing errors for one company don't block other companies
 - [ ] Email monitoring page shows processing history with error visibility
 - [ ] Hangfire dashboard is accessible only to SuperAdmins
+- [ ] AI classification runs for email tickets that have no routing rule match
+- [ ] AI classification correctly handles image-only email submissions (screenshots)
+- [ ] AI classification decisions are stored on the ticket for audit and tuning
+- [ ] AI service is skipped gracefully when disabled or when structured data is already present
 - [ ] All new services have unit tests

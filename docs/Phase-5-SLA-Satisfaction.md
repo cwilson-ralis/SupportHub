@@ -1,6 +1,6 @@
-# Phase 4 — SLA & Customer Satisfaction (Weeks 9–10)
+# Phase 5 — SLA & Customer Satisfaction
 
-> **Prerequisites:** Phases 0–3 complete. Tickets are being created via portal and email. `FirstResponseAt` and `ResolvedAt` are being tracked on tickets. Hangfire is running for background jobs.
+> **Prerequisites:** Phases 0–4 complete. Tickets are being created via portal and email. Routing engine is assigning tickets to divisions. `FirstResponseAt` and `ResolvedAt` are being tracked on tickets. Hangfire is running for background jobs.
 
 ---
 
@@ -10,7 +10,7 @@ Implement SLA policy management, automated SLA monitoring with breach detection 
 
 ---
 
-## Task 4.1 — SLA Policy Management
+## Task 5.1 — SLA Policy Management
 
 ### Instructions
 
@@ -47,7 +47,7 @@ public interface ISlaPolicyService
 
 ---
 
-## Task 4.2 — SLA Calculation Service
+## Task 5.2 — SLA Calculation Service
 
 ### Instructions
 
@@ -142,7 +142,7 @@ public enum SlaUrgency
 
 ---
 
-## Task 4.3 — SLA Monitoring Background Job
+## Task 5.3 — SLA Monitoring Background Job
 
 ### Instructions
 
@@ -172,7 +172,7 @@ recurringJobManager.AddOrUpdate<SlaMonitoringJob>(
 
 ---
 
-## Task 4.4 — SLA Breach Notifications
+## Task 5.4 — SLA Breach Notifications
 
 ### Instructions
 
@@ -208,11 +208,11 @@ public interface ISlaNotificationService
 
 ---
 
-## Task 4.5 — SLA Display in Ticket UI
+## Task 5.5 — SLA Display in Ticket UI
 
 ### Instructions
 
-1. **Update the Ticket Detail page** (Phase 2, Task 2.6) right-side properties panel:
+1. **Update the Ticket Detail page** (Phase 2, Task 2.7) right-side properties panel:
 
    Replace the "SLA not configured" placeholder with a real SLA widget:
 
@@ -236,7 +236,7 @@ public interface ISlaNotificationService
    - Show "No SLA Policy" if the ticket's company + priority has no policy
    - If breached, show how far past the target: "Breached by 2h 30m"
 
-2. **Update the Ticket List page** (Phase 2, Task 2.5):
+2. **Update the Ticket List page** (Phase 2, Task 2.6):
 
    - Add an "SLA" column showing a small indicator:
      - Green dot: on track
@@ -248,7 +248,7 @@ public interface ISlaNotificationService
 
 ---
 
-## Task 4.6 — Customer Satisfaction Surveys
+## Task 5.6 — Customer Satisfaction Surveys
 
 ### Instructions
 
@@ -300,7 +300,7 @@ public interface ISatisfactionService
 
 ---
 
-## Task 4.7 — API Endpoints
+## Task 5.7 — API Endpoints
 
 ### Instructions
 
@@ -327,7 +327,7 @@ GET    /api/v1/tickets/{ticketId}/satisfaction            → GetRating (authent
 
 ---
 
-## Task 4.8 — Testing
+## Task 5.8 — Testing
 
 ### Instructions
 
@@ -352,7 +352,7 @@ GET    /api/v1/tickets/{ticketId}/satisfaction            → GetRating (authent
 
 ---
 
-## Acceptance Criteria for Phase 4
+## Acceptance Criteria for Phase 5
 
 - [ ] Admins can configure SLA policies per company per priority level
 - [ ] Ticket detail page shows real-time SLA countdown with progress bar and urgency colors

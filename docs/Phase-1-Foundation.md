@@ -14,9 +14,9 @@ Set up the solution structure, database, authentication, authorization, and basi
 
 ### Instructions
 
-1. Create a new .NET 8 solution named `SupportHub` using the structure defined in Phase 0.
+1. Create a new .NET 10 solution named `SupportHub` using the structure defined in Phase 0.
 2. Create the following projects:
-   - `SupportHub.Web` — Blazor Server App (use `blazorserver-empty` template or the .NET 8 Blazor Web App template with Server interactivity)
+   - `SupportHub.Web` — Blazor Server App (use `blazorserver-empty` template or the .NET 10 Blazor Web App template with Server interactivity)
    - `SupportHub.Api` — ASP.NET Core Web API (controllers, not minimal API)
    - `SupportHub.Core` — Class Library
    - `SupportHub.Infrastructure` — Class Library
@@ -36,7 +36,7 @@ Set up the solution structure, database, authentication, authorization, and basi
 ```xml
 <Project>
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -80,6 +80,8 @@ public enum TicketSource { Email, Portal, Api }
 public enum MessageDirection { Inbound, Outbound }
 public enum ReplySenderType { SharedMailbox, AgentPersonal }
 public enum SlaBreachType { FirstResponse, Resolution }
+public enum IssueType { AccessRequest, ErrorOrBug, HowToQuestion, Training, NewHire, Termination, Other }
+public enum RoutingConditionType { SenderDomain, SubjectKeyword, BodyKeyword, FormSystemApplication, FormIssueType }
 ```
 
 3. In `SupportHub.Core/`, create a `Result<T>` type for the Result pattern:
@@ -114,9 +116,16 @@ Create the following entities in `SupportHub.Core/Entities/`. All inherit from `
    - `string SharedMailboxAddress` (required, max 320 — max email length)
    - `string? Description`
    - `bool IsActive`
-   - Navigation: `ICollection<Ticket> Tickets`, `ICollection<UserCompanyAssignment> UserAssignments`, `ICollection<SlaPolicy> SlaPolicies`, `ICollection<CannedResponse> CannedResponses`, `ICollection<KnowledgeBaseArticle> KnowledgeBaseArticles`
+   - Navigation: `ICollection<Division> Divisions`, `ICollection<Ticket> Tickets`, `ICollection<UserCompanyAssignment> UserAssignments`, `ICollection<SlaPolicy> SlaPolicies`, `ICollection<CannedResponse> CannedResponses`, `ICollection<KnowledgeBaseArticle> KnowledgeBaseArticles`, `ICollection<RoutingRule> RoutingRules`
 
-2. **UserProfile** (represents an Azure AD user's local profile)
+2. **Division** (routing queue / department within a company — e.g., Tech Support, App Support, New Hire/Termination)
+   - `int CompanyId` (FK)
+   - `string Name` (required, max 200)
+   - `string? Description`
+   - `bool IsActive`
+   - Navigation: `Company Company`, `ICollection<Ticket> Tickets`, `ICollection<RoutingRule> RoutingRules`
+
+3. **UserProfile** (represents an Azure AD user's local profile)
    - `string AzureAdObjectId` (required, max 36 — GUID format)
    - `string DisplayName` (required, max 200)
    - `string Email` (required, max 320)
@@ -124,27 +133,37 @@ Create the following entities in `SupportHub.Core/Entities/`. All inherit from `
    - `bool IsActive`
    - Navigation: `ICollection<UserCompanyAssignment> CompanyAssignments`
 
-3. **UserCompanyAssignment**
+4. **UserCompanyAssignment**
    - `int UserProfileId` (FK)
    - `int CompanyId` (FK)
    - Navigation: `UserProfile UserProfile`, `Company Company`
 
-4. **Ticket**
+5. **Ticket**
    - `int CompanyId` (FK)
+   - `int? DivisionId` (FK → Division, nullable — null means unrouted/General queue)
    - `string Subject` (required, max 500)
    - `TicketStatus Status`
    - `TicketPriority Priority`
    - `TicketSource Source`
+   - `string? SystemApplication` (max 200 — e.g., Empower, Salesforce, Outlook, Hardware; from web form dropdown)
+   - `IssueType? IssueType` (enum — from web form dropdown; null for email-submitted tickets before classification)
    - `int? AssignedAgentId` (FK → UserProfile, nullable)
    - `string RequesterEmail` (required, max 320)
    - `string RequesterName` (required, max 200)
    - `DateTimeOffset? FirstResponseAt`
    - `DateTimeOffset? ResolvedAt`
    - `DateTimeOffset? ClosedAt`
+   - `bool AiClassified` (whether AI classification was applied)
    - `byte[] RowVersion` (concurrency token)
-   - Navigation: `Company Company`, `UserProfile? AssignedAgent`, `ICollection<TicketMessage> Messages`, `ICollection<TicketAttachment> Attachments`, `ICollection<InternalNote> InternalNotes`, `ICollection<SlaBreachRecord> SlaBreaches`, `CustomerSatisfactionRating? SatisfactionRating`
+   - Navigation: `Company Company`, `Division? Division`, `UserProfile? AssignedAgent`, `ICollection<TicketMessage> Messages`, `ICollection<TicketAttachment> Attachments`, `ICollection<TicketTag> Tags`, `ICollection<InternalNote> InternalNotes`, `ICollection<SlaBreachRecord> SlaBreaches`, `CustomerSatisfactionRating? SatisfactionRating`
 
-5. **TicketMessage**
+6. **TicketTag** (flexible tagging — enables SOX audit filtering without schema changes)
+   - `int TicketId` (FK)
+   - `string Tag` (required, max 100 — e.g., `new-hire`, `termination`, `access-request`, `empower`, `salesforce`)
+   - Navigation: `Ticket Ticket`
+   - Index: `TicketId + Tag` (unique composite)
+
+8. **TicketMessage**
    - `int TicketId` (FK)
    - `string Body` (required, nvarchar(max))
    - `string SenderEmail` (required, max 320)
@@ -154,7 +173,7 @@ Create the following entities in `SupportHub.Core/Entities/`. All inherit from `
    - `string? ExternalMessageId` (max 500, Graph API message ID for deduplication)
    - Navigation: `Ticket Ticket`, `ICollection<TicketAttachment> Attachments`
 
-6. **TicketAttachment**
+9. **TicketAttachment**
    - `int? TicketId` (FK, nullable)
    - `int? TicketMessageId` (FK, nullable)
    - `string OriginalFileName` (required, max 500)
@@ -163,29 +182,40 @@ Create the following entities in `SupportHub.Core/Entities/`. All inherit from `
    - `long FileSizeBytes`
    - Navigation: `Ticket? Ticket`, `TicketMessage? TicketMessage`
 
-7. **InternalNote**
-   - `int TicketId` (FK)
-   - `int AuthorId` (FK → UserProfile)
-   - `string Body` (required, nvarchar(max))
-   - Navigation: `Ticket Ticket`, `UserProfile Author`
+10. **InternalNote**
+    - `int TicketId` (FK)
+    - `int AuthorId` (FK → UserProfile)
+    - `string Body` (required, nvarchar(max))
+    - Navigation: `Ticket Ticket`, `UserProfile Author`
 
-8. **CannedResponse**
-   - `int? CompanyId` (FK, nullable — null means global)
-   - `string Title` (required, max 200)
-   - `string Body` (required, nvarchar(max))
-   - `int SortOrder`
-   - Navigation: `Company? Company`
+11. **CannedResponse**
+    - `int? CompanyId` (FK, nullable — null means global)
+    - `string Title` (required, max 200)
+    - `string Body` (required, nvarchar(max))
+    - `int SortOrder`
+    - Navigation: `Company? Company`
 
-9. **KnowledgeBaseArticle**
-   - `int CompanyId` (FK)
-   - `int AuthorId` (FK → UserProfile)
-   - `string Title` (required, max 500)
-   - `string Body` (required, nvarchar(max), stored as Markdown)
-   - `string? Tags` (max 1000, comma-separated for v1)
-   - `bool IsPublished`
-   - Navigation: `Company Company`, `UserProfile Author`
+12. **KnowledgeBaseArticle**
+    - `int CompanyId` (FK)
+    - `int AuthorId` (FK → UserProfile)
+    - `string Title` (required, max 500)
+    - `string Body` (required, nvarchar(max), stored as Markdown)
+    - `string? Tags` (max 1000, comma-separated for v1)
+    - `bool IsPublished`
+    - Navigation: `Company Company`, `UserProfile Author`
 
-10. **SlaPolicy**
+13. **RoutingRule** (admin-configurable rules that assign tickets to a division/queue without code changes)
+    - `int CompanyId` (FK)
+    - `string Name` (required, max 200)
+    - `bool IsEnabled`
+    - `int SortOrder`
+    - `RoutingConditionType ConditionType` (enum: SenderDomain, SubjectKeyword, BodyKeyword, FormSystemApplication, FormIssueType)
+    - `string ConditionValue` (required, max 500 — the value to match, e.g., `@tle.com`, `Empower`)
+    - `int? TargetDivisionId` (FK → Division, nullable — where to route if matched; null = default/General)
+    - `string? AutoTag` (max 100, optional tag to apply when rule matches, e.g., `termination`)
+    - Navigation: `Company Company`, `Division? TargetDivision`
+
+14. **SlaPolicy**
     - `int CompanyId` (FK)
     - `TicketPriority Priority`
     - `int FirstResponseMinutes`
@@ -193,14 +223,14 @@ Create the following entities in `SupportHub.Core/Entities/`. All inherit from `
     - Navigation: `Company Company`
     - Unique constraint: `CompanyId + Priority`
 
-11. **SlaBreachRecord**
+15. **SlaBreachRecord**
     - `int TicketId` (FK)
     - `int SlaPolicyId` (FK)
     - `SlaBreachType BreachType`
     - `DateTimeOffset BreachedAt`
     - Navigation: `Ticket Ticket`, `SlaPolicy SlaPolicy`
 
-12. **CustomerSatisfactionRating**
+16. **CustomerSatisfactionRating**
     - `int TicketId` (FK, unique)
     - `int Score` (1–5)
     - `string? Comment` (max 2000)
@@ -226,7 +256,12 @@ Create the following entities in `SupportHub.Core/Entities/`. All inherit from `
    - Configure unique composite index on `UserCompanyAssignment(UserProfileId, CompanyId)`
    - Configure unique composite index on `SlaPolicy(CompanyId, Priority)`
    - Configure unique index on `CustomerSatisfactionRating.TicketId`
+   - Configure unique composite index on `TicketTag(TicketId, Tag)`
+   - Add index on `TicketTag.Tag` (for filtering by tag across tickets)
    - Add indexes on all foreign keys
+   - Add composite index `IX_Ticket_CompanyId_Status` for filtered ticket list queries
+   - Add index `IX_Ticket_AssignedAgentId` for agent workload queries
+   - Add index `IX_RoutingRule_CompanyId_SortOrder` for ordered rule evaluation
    - Configure `DeleteBehavior.Restrict` on all relationships (soft-delete means we never cascade hard-delete)
 
 3. In `SupportHub.Core/Interfaces/`, create `ICurrentUserService`:
@@ -379,13 +414,13 @@ public interface IUserService
 1. Create `azure-pipelines.yml` at the solution root with:
    - Trigger on `main` and `develop` branches
    - Steps: Restore → Build → Test → Publish
-   - Use `.NET 8` SDK
+   - Use `.NET 10` SDK
    - Run `dotnet test` with code coverage
    - Publish artifacts for the Web and Api projects
 
 2. Document local development setup in `docs/LocalSetup.md`:
+   - Prerequisites: .NET 10 SDK, SQL Server, Azure AD app registration values
    - SQL Server connection string
-   - Azure AD app registration values
    - How to run migrations
    - How to start the app
 

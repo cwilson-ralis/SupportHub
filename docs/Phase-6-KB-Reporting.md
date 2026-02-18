@@ -1,16 +1,16 @@
-# Phase 5 — Knowledge Base & Reporting (Weeks 11–12)
+# Phase 6 — Audit Reporting & Knowledge Base
 
-> **Prerequisites:** Phases 0–4 complete. Full ticket lifecycle with email, SLA, and satisfaction tracking is operational. Data is flowing for reporting.
+> **Prerequisites:** Phases 0–5 complete. Full ticket lifecycle with email, SLA, satisfaction tracking, and routing is operational. Data is flowing for reporting.
 
 ---
 
 ## Objective
 
-Build an internal knowledge base that agents can reference while handling tickets, and a reporting dashboard that surfaces key operational metrics — specifically ensuring tickets are not being missed or dropped. At the end of this phase, agents have a searchable KB at their fingertips, and admins have clear visibility into support performance.
+Build SOX-required audit/compliance reporting, an operational performance dashboard, and an internal knowledge base. At the end of this phase, admins can produce SOX audit reports (terminations, new hires, access requests by date range) on demand, agents have a searchable KB at their fingertips, and leadership has clear visibility into support performance.
 
 ---
 
-## Task 5.1 — Knowledge Base Service
+## Task 6.1 — Knowledge Base Service
 
 ### Instructions
 
@@ -52,7 +52,7 @@ dotnet add src/SupportHub.Infrastructure/SupportHub.Infrastructure.csproj packag
 
 ---
 
-## Task 5.2 — Knowledge Base Blazor Pages
+## Task 6.2 — Knowledge Base Blazor Pages
 
 ### Instructions
 
@@ -90,7 +90,7 @@ dotnet add src/SupportHub.Infrastructure/SupportHub.Infrastructure.csproj packag
 
 ---
 
-## Task 5.3 — KB Integration in Ticket Detail
+## Task 6.3 — KB Integration in Ticket Detail
 
 ### Instructions
 
@@ -118,7 +118,92 @@ dotnet add src/SupportHub.Infrastructure/SupportHub.Infrastructure.csproj packag
 
 ---
 
-## Task 5.4 — Reporting Service
+## Task 6.4 — SOX Compliance Reporting Service
+
+### Instructions
+
+SOX audit support is a **required feature** explicitly identified during kickoff. Auditors must be able to retrieve ticket histories filtered by category and date range without requiring direct database access.
+
+1. **Create `IComplianceReportingService`** in `Core/Interfaces/`:
+
+```csharp
+public interface IComplianceReportingService
+{
+    Task<ComplianceReportDto> GetTaggedTicketsReportAsync(ComplianceReportFilterDto filter);
+    Task<byte[]> ExportTaggedTicketsToCsvAsync(ComplianceReportFilterDto filter);
+}
+
+public record ComplianceReportFilterDto(
+    string Tag,                 // e.g., "termination", "new-hire", "access-request"
+    DateTimeOffset DateFrom,
+    DateTimeOffset DateTo,
+    int? CompanyId = null);     // null = all companies (SuperAdmin)
+
+public record ComplianceReportDto(
+    string Tag,
+    DateTimeOffset DateFrom,
+    DateTimeOffset DateTo,
+    int TotalCount,
+    List<ComplianceTicketRowDto> Tickets);
+
+public record ComplianceTicketRowDto(
+    int TicketId,
+    string Subject,
+    string CompanyName,
+    string RequesterName,
+    string RequesterEmail,
+    string AssignedAgentName,
+    TicketStatus Status,
+    IssueType? IssueType,
+    List<string> Tags,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? ResolvedAt,
+    DateTimeOffset? ClosedAt);
+```
+
+2. **Implement `ComplianceReportingService`:**
+   - Query tickets that have a `TicketTag` matching the given tag, filtered by date range (on `CreatedAt`)
+   - Include soft-deleted tickets (the compliance report must show retained data — use `.IgnoreQueryFilters()`)
+   - Apply company access check: SuperAdmin sees all companies; Admin sees assigned companies only
+   - Sort by `CreatedAt` descending by default
+   - For CSV export: use `CsvHelper`, UTF-8 with BOM, all key fields, dates in `yyyy-MM-dd HH:mm:ss UTC` format
+
+3. **Create Blazor page `Pages/Reports/ComplianceReport.razor`:**
+
+   **Layout:**
+   - Tag selector (dropdown with well-known tags: Termination, New Hire, Access Request, + free-text for custom tags)
+   - Company filter (dropdown, or "All Companies" for SuperAdmin)
+   - Date range picker (required)
+   - "Run Report" button
+   - Results section (hidden until report is run):
+     - Summary: "X tickets tagged `{tag}` between {from} and {to}"
+     - `MudDataGrid` with columns: Ticket #, Subject, Company, Requester, Agent, Status, Issue Type, Created, Resolved/Closed
+     - Each row links to ticket detail
+     - "Export to CSV" button
+   - Accessible to Admin/SuperAdmin only
+
+4. **Add well-known compliance tags** as constants in `Core/Constants/`:
+
+```csharp
+public static class WellKnownTags
+{
+    public const string Termination = "termination";
+    public const string NewHire = "new-hire";
+    public const string AccessRequest = "access-request";
+    public const string Empower = "empower";
+    public const string Salesforce = "salesforce";
+}
+```
+
+5. **Unit tests:**
+   - Test: report filters correctly by tag and date range
+   - Test: soft-deleted tickets are included in compliance reports
+   - Test: company access is enforced (agent cannot see other company's compliance data)
+   - Test: CSV export includes all required fields
+
+---
+
+## Task 6.5 — Operational Reporting Service
 
 ### Instructions
 
@@ -190,7 +275,7 @@ public interface IReportingService
 
 ---
 
-## Task 5.5 — Dashboard Page
+## Task 6.6 — Dashboard Page
 
 ### Instructions
 
@@ -229,7 +314,7 @@ public interface IReportingService
 
 ---
 
-## Task 5.6 — Reports Page
+## Task 6.7 — Reports Page
 
 ### Instructions
 
@@ -257,13 +342,21 @@ public interface IReportingService
    - Summary counts at the top
    - This tab should have a visual warning if any counts are > 0
 
+   **Tab 5: Compliance / Audit** (SOX support — Admin/SuperAdmin only)
+   - Links to the `ComplianceReport` page (Task 6.4) for each well-known tag:
+     - "View Termination Report"
+     - "View New Hire Report"
+     - "View Access Request Report"
+   - Or embed the compliance report form inline on this tab
+   - Reminder: "These reports include soft-deleted tickets to satisfy data retention requirements."
+
 2. **All tabs share:**
    - Company filter and date range filter (same as dashboard)
    - "Export to CSV" button per table (generate CSV on the server, download via file endpoint)
 
 ---
 
-## Task 5.7 — CSV Export
+## Task 6.8 — CSV Export
 
 ### Instructions
 
@@ -296,7 +389,7 @@ GET /api/v1/reports/agents/export?{filters}        → CSV of agent performance
 
 ---
 
-## Task 5.8 — KB API Endpoints
+## Task 6.9 — KB API Endpoints
 
 ### Instructions
 
@@ -313,30 +406,35 @@ GET    /api/v1/reports/ticket-volume?{filter}             → Ticket volume repo
 GET    /api/v1/reports/sla-performance?{filter}           → SLA performance report
 GET    /api/v1/reports/agent-performance?{filter}         → Agent performance report
 GET    /api/v1/reports/unattended?{filter}                → Unattended tickets report
+
+GET    /api/v1/reports/compliance?tag={tag}&from={date}&to={date}&companyId={id}  → Compliance/SOX report
+GET    /api/v1/reports/compliance/export?{same filters}   → CSV export of compliance report
 ```
 
 ---
 
-## Task 5.9 — Navigation Updates
+## Task 6.10 — Navigation Updates
 
 ### Instructions
 
-1. **Update sidebar navigation** (from Phase 2, Task 2.9):
-   - **Dashboard** → now links to the real dashboard (Phase 5)
+1. **Update sidebar navigation** (from Phase 2, Task 2.10):
+   - **Dashboard** → now links to the real dashboard (Phase 6)
    - **Tickets** → existing ticket list
    - **Knowledge Base** → now active, links to KB article list
    - **Admin** section:
      - Companies
      - Users
+     - Divisions / Queues (active from Phase 4)
+     - Routing Rules (active from Phase 4)
      - Canned Responses
-     - SLA Policies
+     - SLA Policies (active from Phase 5)
    - **Reports** → links to the reports page (Admin/SuperAdmin only)
 
 2. **Set Dashboard as the default landing page** after login.
 
 ---
 
-## Task 5.10 — Testing
+## Task 6.11 — Testing
 
 ### Instructions
 
@@ -353,12 +451,19 @@ GET    /api/v1/reports/unattended?{filter}                → Unattended tickets
    - Test: date range filtering works
    - Test: company access filtering works
 
-3. **Unit tests for `ExportService`:**
+3. **Unit tests for `ComplianceReportingService`:**
+   - Test: report returns tickets with matching tag in date range
+   - Test: report includes soft-deleted tickets
+   - Test: report excludes tickets outside date range
+   - Test: company access enforced (agent cannot see other company's data)
+   - Test: CSV export contains all required columns
+
+4. **Unit tests for `ExportService`:**
    - Test: CSV output has correct headers and formatting
 
 ---
 
-## Acceptance Criteria for Phase 5
+## Acceptance Criteria for Phase 6
 
 - [ ] Agents can browse, search, and read KB articles filtered by company
 - [ ] Admins can create, edit, publish/unpublish, and delete KB articles
@@ -372,4 +477,8 @@ GET    /api/v1/reports/unattended?{filter}                → Unattended tickets
 - [ ] CSV export works for ticket lists, SLA breaches, and agent performance
 - [ ] Company-level access control is enforced across all reporting
 - [ ] Dashboard is the default landing page after login
+- [ ] SOX compliance report returns all tickets with a given tag (e.g., `termination`) filtered by date range
+- [ ] SOX compliance report includes soft-deleted (retained) tickets
+- [ ] SOX compliance report is exportable to CSV for submission to auditors
+- [ ] Well-known compliance tags (`termination`, `new-hire`, `access-request`) have dedicated report shortcuts
 - [ ] All new services have unit tests

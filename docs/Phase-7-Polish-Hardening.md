@@ -1,6 +1,6 @@
-# Phase 6 — Polish & Hardening (Week 13+)
+# Phase 7 — Polish & Hardening (Week 13+)
 
-> **Prerequisites:** Phases 0–5 complete. All core features are functional. This phase focuses on production readiness, performance, UX polish, audit logging, and documentation.
+> **Prerequisites:** Phases 0–6 complete. All core features are functional. This phase focuses on production readiness, performance, UX polish, audit logging, and documentation.
 
 ---
 
@@ -10,7 +10,7 @@ Prepare SupportHub for production use: add audit logging, improve error handling
 
 ---
 
-## Task 6.1 — Audit Logging
+## Task 7.1 — Audit Logging
 
 ### Instructions
 
@@ -87,7 +87,7 @@ public interface IAuditService
 
 ---
 
-## Task 6.2 — Error Handling & Resilience
+## Task 7.2 — Error Handling & Resilience
 
 ### Instructions
 
@@ -120,7 +120,7 @@ public interface IAuditService
 
 ---
 
-## Task 6.3 — Performance Optimization
+## Task 7.3 — Performance Optimization
 
 ### Instructions
 
@@ -158,7 +158,7 @@ public interface IAuditService
 
 ---
 
-## Task 6.4 — UI Polish
+## Task 7.4 — UI Polish
 
 ### Instructions
 
@@ -210,7 +210,7 @@ public interface IAuditService
 
 ---
 
-## Task 6.5 — Security Hardening
+## Task 7.5 — Security Hardening
 
 ### Instructions
 
@@ -244,7 +244,7 @@ public interface IAuditService
 
 ---
 
-## Task 6.6 — Health Checks & Monitoring
+## Task 7.6 — Health Checks & Monitoring
 
 ### Instructions
 
@@ -277,14 +277,14 @@ builder.Services.AddHealthChecks()
 
 ---
 
-## Task 6.7 — Documentation
+## Task 7.7 — Documentation
 
 ### Instructions
 
 Create the following documents in the `docs/` folder:
 
 1. **`docs/LocalSetup.md`** (update from Phase 1):
-   - Prerequisites: .NET 8 SDK, SQL Server, Node.js (if any tooling needs it)
+   - Prerequisites: .NET 10 SDK, SQL Server, Node.js (if any tooling needs it)
    - Clone, restore, build steps
    - Database setup: connection string, run migrations
    - Azure AD app registration: step-by-step with screenshots/links
@@ -302,7 +302,7 @@ Create the following documents in the `docs/` folder:
 
 3. **`docs/DeploymentGuide.md`**:
    - On-premises IIS deployment:
-     - Install .NET 8 Hosting Bundle
+     - Install .NET 10 Hosting Bundle
      - Configure IIS site and app pool
      - Connection string and secrets management (environment variables)
      - SSL certificate setup
@@ -327,7 +327,7 @@ Create the following documents in the `docs/` folder:
 
 ---
 
-## Task 6.8 — Final Testing & QA
+## Task 7.8 — Final Testing & QA
 
 ### Instructions
 
@@ -381,7 +381,7 @@ Create the following documents in the `docs/` folder:
 
 ---
 
-## Acceptance Criteria for Phase 6
+## Acceptance Criteria for Phase 7
 
 - [ ] Audit log captures all data mutations with before/after values
 - [ ] Audit log is viewable and searchable by SuperAdmins

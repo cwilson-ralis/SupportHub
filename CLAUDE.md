@@ -32,11 +32,12 @@ Build plan documents are in the `docs/` directory:
 |---|---|
 | `docs/Phase-0-Project-Overview.md` | Architecture, conventions, tech stack |
 | `docs/Phase-1-Foundation.md` | Solution structure, DB, auth, company/user mgmt |
-| `docs/Phase-2-Core-Ticketing.md` | Ticket CRUD, notes, attachments, canned responses |
-| `docs/Phase-3-Email-Integration.md` | Graph API email ingestion and sending |
-| `docs/Phase-4-SLA-Satisfaction.md` | SLA monitoring, breach detection, CSAT surveys |
-| `docs/Phase-5-KB-Reporting.md` | Knowledge base, dashboard, reports |
-| `docs/Phase-6-Polish-Hardening.md` | Audit, performance, security, docs |
+| `docs/Phase-2-Core-Ticketing.md` | Ticket CRUD, structured form, notes, attachments, canned responses, tagging |
+| `docs/Phase-3-Email-Integration.md` | Graph API email ingestion, sending, AI classification |
+| `docs/Phase-4-Rules-Engine.md` | Routing rules engine, division/queue management admin UI |
+| `docs/Phase-5-SLA-Satisfaction.md` | SLA monitoring, breach detection, CSAT surveys |
+| `docs/Phase-6-KB-Reporting.md` | SOX compliance reports, knowledge base, dashboard, reports |
+| `docs/Phase-7-Polish-Hardening.md` | Audit logging, performance, security, docs |
 
 ### Shared Context
 
