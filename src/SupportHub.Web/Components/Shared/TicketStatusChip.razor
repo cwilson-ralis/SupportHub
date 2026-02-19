@@ -1,0 +1,18 @@
+@namespace SupportHub.Web.Components.Shared
+
+<MudChip T="string" Color="@GetColor()" Size="Size.Small">@Status.ToString()</MudChip>
+
+@code {
+    [Parameter] public TicketStatus Status { get; set; }
+
+    private Color GetColor() => Status switch
+    {
+        TicketStatus.New => Color.Info,
+        TicketStatus.Open => Color.Primary,
+        TicketStatus.Pending => Color.Warning,
+        TicketStatus.OnHold => Color.Default,
+        TicketStatus.Resolved => Color.Success,
+        TicketStatus.Closed => Color.Dark,
+        _ => Color.Default
+    };
+}

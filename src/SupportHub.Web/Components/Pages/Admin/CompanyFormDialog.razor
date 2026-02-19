@@ -1,0 +1,85 @@
+@inject ICompanyService CompanyService
+@inject ISnackbar Snackbar
+@using SupportHub.Application.DTOs
+@using SupportHub.Application.Interfaces
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="_isValid">
+            <MudTextField @bind-Value="Name" Label="Name" Required="true"
+                          RequiredError="Name is required." MaxLength="200" />
+            <MudTextField @bind-Value="Code" Label="Code" Required="true"
+                          RequiredError="Code is required." MaxLength="50"
+                          HelperText="Short unique identifier (e.g. TLE, CSBK) — must be unique across all companies" Class="mt-3" />
+            <MudTextField @bind-Value="Description" Label="Description" Lines="3"
+                          MaxLength="1000" Class="mt-3" />
+            @if (IsEdit)
+            {
+                <MudCheckBox @bind-Value="IsActive" Label="Active" Class="mt-3" />
+            }
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   OnClick="SubmitAsync" Disabled="_saving">
+            @(IsEdit ? "Save" : "Create")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public bool IsEdit { get; set; }
+    [Parameter] public Guid CompanyId { get; set; }
+    [Parameter] public string Name { get; set; } = string.Empty;
+    [Parameter] public string Code { get; set; } = string.Empty;
+    [Parameter] public bool IsActive { get; set; } = true;
+    [Parameter] public string? Description { get; set; }
+
+    private MudForm _form = null!;
+    private bool _isValid;
+    private bool _saving;
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task SubmitAsync()
+    {
+        await _form.Validate();
+        if (!_isValid) return;
+
+        _saving = true;
+
+        if (IsEdit)
+        {
+            var request = new UpdateCompanyRequest(Name, Code, IsActive, Description);
+            var result = await CompanyService.UpdateCompanyAsync(CompanyId, request);
+            if (result.IsSuccess)
+            {
+                Snackbar.Add("Company updated.", Severity.Success);
+                MudDialog.Close(DialogResult.Ok(true));
+            }
+            else
+            {
+                Snackbar.Add(result.Error ?? "Failed to update company.", Severity.Error);
+            }
+        }
+        else
+        {
+            var request = new CreateCompanyRequest(Name, Code, Description);
+            var result = await CompanyService.CreateCompanyAsync(request);
+            if (result.IsSuccess)
+            {
+                Snackbar.Add("Company created.", Severity.Success);
+                MudDialog.Close(DialogResult.Ok(true));
+            }
+            else
+            {
+                Snackbar.Add(result.Error ?? "Failed to create company.", Severity.Error);
+            }
+        }
+
+        _saving = false;
+    }
+}

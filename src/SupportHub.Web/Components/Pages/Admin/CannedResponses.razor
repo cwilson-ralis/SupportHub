@@ -1,0 +1,84 @@
+@page "/admin/canned-responses"
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = "Admin")]
+@inject ICannedResponseService CannedResponseService
+@inject ICompanyService CompanyService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Canned Responses</PageTitle>
+<div class="d-flex justify-space-between align-center mb-4">
+    <MudText Typo="Typo.h5">Canned Responses</MudText>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+               OnClick="OpenCreateDialog">New Response</MudButton>
+</div>
+
+<MudDataGrid T="CannedResponseDto" ServerData="LoadDataAsync" @ref="_grid" Dense="true" Striped="true">
+    <Columns>
+        <PropertyColumn Property="x => x.Title" Title="Title" />
+        <PropertyColumn Property="x => x.Category" Title="Category" />
+        <PropertyColumn Property="x => x.CompanyName" Title="Company" />
+        <PropertyColumn Property="x => x.SortOrder" Title="Sort" />
+        <TemplateColumn Title="Active">
+            <CellTemplate>
+                <MudChip T="string" Color="@(context.Item.IsActive ? Color.Success : Color.Default)" Size="Size.Small">
+                    @(context.Item.IsActive ? "Active" : "Inactive")
+                </MudChip>
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Actions">
+            <CellTemplate>
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => OpenEditDialog(context.Item))" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteAsync(context.Item.Id))" />
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <PagerContent>
+        <MudDataGridPager T="CannedResponseDto" PageSizeOptions="new[] { 10, 25, 50 }" />
+    </PagerContent>
+</MudDataGrid>
+
+@code {
+    private MudDataGrid<CannedResponseDto> _grid = null!;
+    private List<CompanyDto> _companies = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await CompanyService.GetCompaniesAsync(1, 100);
+        if (result.IsSuccess) _companies = result.Value!.Items.ToList();
+    }
+
+    private async Task<GridData<CannedResponseDto>> LoadDataAsync(GridState<CannedResponseDto> state)
+    {
+        var result = await CannedResponseService.GetCannedResponsesAsync(null, state.Page + 1, state.PageSize);
+        if (!result.IsSuccess) return new GridData<CannedResponseDto>();
+        return new GridData<CannedResponseDto> { Items = result.Value!.Items, TotalItems = result.Value.TotalCount };
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var parameters = new DialogParameters { ["Companies"] = _companies, ["Response"] = (CannedResponseDto?)null };
+        var dialog = await DialogService.ShowAsync<CannedResponseFormDialog>("New Canned Response", parameters);
+        var result = await dialog.Result;
+        if (!result!.Canceled) await _grid.ReloadServerData();
+    }
+
+    private async Task OpenEditDialog(CannedResponseDto response)
+    {
+        var parameters = new DialogParameters { ["Companies"] = _companies, ["Response"] = response };
+        var dialog = await DialogService.ShowAsync<CannedResponseFormDialog>("Edit Canned Response", parameters);
+        var result = await dialog.Result;
+        if (!result!.Canceled) await _grid.ReloadServerData();
+    }
+
+    private async Task DeleteAsync(Guid id)
+    {
+        var confirm = await DialogService.ShowMessageBox("Delete", "Delete this canned response?", "Delete", "Cancel");
+        if (confirm == true)
+        {
+            var result = await CannedResponseService.DeleteCannedResponseAsync(id);
+            if (result.IsSuccess) await _grid.ReloadServerData();
+            else Snackbar.Add($"Error: {result.Error}", Severity.Error);
+        }
+    }
+}

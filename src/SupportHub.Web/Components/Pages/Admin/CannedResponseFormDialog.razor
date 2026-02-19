@@ -1,0 +1,70 @@
+@inject ICannedResponseService CannedResponseService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudSelect T="Guid?" Label="Company (leave empty for global)" @bind-Value="_companyId" Clearable="true">
+                @foreach (var c in Companies)
+                {
+                    <MudSelectItem Value="@((Guid?)c.Id)">@c.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField Label="Title" @bind-Value="_title" Required="true" Class="mt-2" />
+            <MudTextField Label="Body" @bind-Value="_body" Required="true" Lines="5" Class="mt-2" />
+            <MudTextField Label="Category" @bind-Value="_category" Class="mt-2" />
+            <MudNumericField T="int" Label="Sort Order" @bind-Value="_sortOrder" Class="mt-2" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="SubmitAsync">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public List<CompanyDto> Companies { get; set; } = [];
+    [Parameter] public CannedResponseDto? Response { get; set; }
+
+    private MudForm _form = null!;
+    private Guid? _companyId;
+    private string _title = string.Empty;
+    private string _body = string.Empty;
+    private string? _category;
+    private int _sortOrder;
+
+    protected override void OnParametersSet()
+    {
+        if (Response is not null)
+        {
+            _companyId = Response.CompanyId;
+            _title = Response.Title;
+            _body = Response.Body;
+            _category = Response.Category;
+            _sortOrder = Response.SortOrder;
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        await _form.Validate();
+        if (!_form.IsValid) return;
+        if (Response is null)
+        {
+            var result = await CannedResponseService.CreateCannedResponseAsync(
+                new CreateCannedResponseRequest(_companyId, _title, _body, _category, _sortOrder));
+            if (result.IsSuccess) MudDialog.Close(DialogResult.Ok(true));
+            else Snackbar.Add($"Error: {result.Error}", Severity.Error);
+        }
+        else
+        {
+            var result = await CannedResponseService.UpdateCannedResponseAsync(Response.Id,
+                new UpdateCannedResponseRequest(_title, _body, _category, _sortOrder, null));
+            if (result.IsSuccess) MudDialog.Close(DialogResult.Ok(true));
+            else Snackbar.Add($"Error: {result.Error}", Severity.Error);
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

@@ -1,0 +1,199 @@
+@page "/tickets/{Id:guid}"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject ITicketService TicketService
+@inject ITicketMessageService MessageService
+@inject IInternalNoteService NoteService
+@inject ITagService TagService
+@inject IUserService UserService
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>@(_ticket?.TicketNumber ?? "Ticket")</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else if (_ticket is null)
+{
+    <MudAlert Severity="Severity.Error">Ticket not found.</MudAlert>
+}
+else
+{
+    <div class="d-flex align-center gap-2 mb-4">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" OnClick="@(() => Nav.NavigateTo("/tickets"))" />
+        <MudText Typo="Typo.h6">@_ticket.TicketNumber — @_ticket.Subject</MudText>
+        <TicketStatusChip Status="@_ticket.Status" />
+        <TicketPriorityChip Priority="@_ticket.Priority" />
+    </div>
+
+    <MudGrid>
+        @* Main column *@
+        <MudItem xs="12" md="8">
+            <ConversationTimeline Messages="@_messages" Notes="@_notes" IsAgent="true" />
+
+            <MudPaper Class="pa-3 mt-4">
+                <MudTabs>
+                    <MudTabPanel Text="Reply">
+                        <MudTextField Label="Reply" @bind-Value="_replyBody" Lines="4" Class="mt-2" />
+                        <div class="d-flex justify-end mt-2">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                       OnClick="SendReplyAsync" Disabled="_sendingReply">Send Reply</MudButton>
+                        </div>
+                    </MudTabPanel>
+                    <MudTabPanel Text="Internal Note">
+                        <MudTextField Label="Internal Note" @bind-Value="_noteBody" Lines="4" Class="mt-2" />
+                        <div class="d-flex justify-end mt-2">
+                            <MudButton Variant="Variant.Filled" Color="Color.Warning"
+                                       OnClick="AddNoteAsync" Disabled="_addingNote">Add Note</MudButton>
+                        </div>
+                    </MudTabPanel>
+                </MudTabs>
+            </MudPaper>
+        </MudItem>
+
+        @* Sidebar *@
+        <MudItem xs="12" md="4">
+            <MudCard Class="mb-3">
+                <MudCardHeader><MudText Typo="Typo.subtitle1">Properties</MudText></MudCardHeader>
+                <MudCardContent>
+                    <MudSelect T="TicketStatus" Label="Status" Value="_ticket.Status" ValueChanged="OnStatusChanged">
+                        @foreach (var s in Enum.GetValues<TicketStatus>())
+                        {
+                            <MudSelectItem Value="@s">@s.ToString()</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudSelect T="TicketPriority" Label="Priority" Value="_ticket.Priority" ValueChanged="OnPriorityChanged" Class="mt-2">
+                        @foreach (var p in Enum.GetValues<TicketPriority>())
+                        {
+                            <MudSelectItem Value="@p">@p.ToString()</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudDivider Class="my-2" />
+                    <MudText Typo="Typo.caption">Company</MudText>
+                    <MudText>@_ticket.CompanyName</MudText>
+                    <MudText Typo="Typo.caption" Class="mt-1">Requester</MudText>
+                    <MudText>@_ticket.RequesterName (@_ticket.RequesterEmail)</MudText>
+                    <MudText Typo="Typo.caption" Class="mt-1">Created</MudText>
+                    <MudText>@_ticket.CreatedAt.LocalDateTime.ToString("g")</MudText>
+                    @if (_ticket.FirstResponseAt.HasValue)
+                    {
+                        <MudText Typo="Typo.caption" Class="mt-1">First Response</MudText>
+                        <MudText>@_ticket.FirstResponseAt.Value.LocalDateTime.ToString("g")</MudText>
+                    }
+                    @if (_ticket.ResolvedAt.HasValue)
+                    {
+                        <MudText Typo="Typo.caption" Class="mt-1">Resolved</MudText>
+                        <MudText>@_ticket.ResolvedAt.Value.LocalDateTime.ToString("g")</MudText>
+                    }
+                </MudCardContent>
+            </MudCard>
+
+            <MudCard Class="mb-3">
+                <MudCardHeader><MudText Typo="Typo.subtitle1">Tags</MudText></MudCardHeader>
+                <MudCardContent>
+                    <div class="d-flex flex-wrap gap-1 mb-2">
+                        @foreach (var tag in _ticket.Tags)
+                        {
+                            <MudChip T="string" OnClose="@(_ => RemoveTagAsync(tag.Tag))" Size="Size.Small">@tag.Tag</MudChip>
+                        }
+                    </div>
+                    <MudAutocomplete T="string" Label="Add tag" Value="_newTag"
+                                     SearchFunc="SearchTagsAsync" ResetValueOnEmptyText="true"
+                                     CoerceText="true" Immediate="true"
+                                     ValueChanged="OnTagSelected" />
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private TicketDto? _ticket;
+    private IReadOnlyList<TicketMessageDto> _messages = [];
+    private IReadOnlyList<InternalNoteDto> _notes = [];
+    private bool _loading = true;
+    private string _replyBody = string.Empty;
+    private string _noteBody = string.Empty;
+    private bool _sendingReply;
+    private bool _addingNote;
+    private string? _newTag;
+
+    protected override async Task OnInitializedAsync() => await LoadTicketAsync();
+
+    private async Task LoadTicketAsync()
+    {
+        _loading = true;
+        var result = await TicketService.GetTicketByIdAsync(Id);
+        if (result.IsSuccess)
+        {
+            _ticket = result.Value;
+            var msgResult = await MessageService.GetMessagesAsync(Id);
+            if (msgResult.IsSuccess) _messages = msgResult.Value!;
+            var noteResult = await NoteService.GetNotesAsync(Id);
+            if (noteResult.IsSuccess) _notes = noteResult.Value!;
+        }
+        _loading = false;
+    }
+
+    private async Task SendReplyAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_replyBody)) return;
+        _sendingReply = true;
+        var request = new CreateTicketMessageRequest(MessageDirection.Outbound, null, null, _replyBody, null);
+        var result = await MessageService.AddMessageAsync(Id, request);
+        _sendingReply = false;
+        if (result.IsSuccess) { _replyBody = string.Empty; await LoadTicketAsync(); }
+        else Snackbar.Add($"Error: {result.Error}", Severity.Error);
+    }
+
+    private async Task AddNoteAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_noteBody)) return;
+        _addingNote = true;
+        var result = await NoteService.AddNoteAsync(Id, new CreateInternalNoteRequest(_noteBody));
+        _addingNote = false;
+        if (result.IsSuccess) { _noteBody = string.Empty; await LoadTicketAsync(); }
+        else Snackbar.Add($"Error: {result.Error}", Severity.Error);
+    }
+
+    private async Task OnStatusChanged(TicketStatus newStatus)
+    {
+        var result = await TicketService.ChangeStatusAsync(Id, newStatus);
+        if (result.IsSuccess) await LoadTicketAsync();
+        else Snackbar.Add($"Error: {result.Error}", Severity.Error);
+    }
+
+    private async Task OnPriorityChanged(TicketPriority newPriority)
+    {
+        var result = await TicketService.ChangePriorityAsync(Id, newPriority);
+        if (result.IsSuccess) await LoadTicketAsync();
+        else Snackbar.Add($"Error: {result.Error}", Severity.Error);
+    }
+
+    private async Task<IEnumerable<string>> SearchTagsAsync(string value, CancellationToken ct)
+    {
+        var result = await TagService.GetPopularTagsAsync(_ticket?.CompanyId, 20, ct);
+        if (!result.IsSuccess) return [];
+        return result.Value!.Where(t => string.IsNullOrEmpty(value) || t.Contains(value, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task OnTagSelected(string tag)
+    {
+        if (string.IsNullOrWhiteSpace(tag)) return;
+        var result = await TagService.AddTagAsync(Id, tag);
+        _newTag = null;
+        if (result.IsSuccess) await LoadTicketAsync();
+        else Snackbar.Add($"Error: {result.Error}", Severity.Error);
+    }
+
+    private async Task RemoveTagAsync(string tag)
+    {
+        var result = await TagService.RemoveTagAsync(Id, tag);
+        if (result.IsSuccess) await LoadTicketAsync();
+        else Snackbar.Add($"Error: {result.Error}", Severity.Error);
+    }
+}

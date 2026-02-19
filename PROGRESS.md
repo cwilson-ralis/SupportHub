@@ -6,145 +6,177 @@ The orchestrator updates this file after each wave. Sub-agents read it to unders
 ---
 
 ## Phase 1 — Foundation
-### Wave 1 — Domain Core & Shared Abstractions
-- [ ] BaseEntity class — backend
-- [ ] Result&lt;T&gt; and PagedResult&lt;T&gt; — backend
-- [ ] UserRole enum — backend
+### Wave 1 — Domain Core & Shared Abstractions ✅
+- [x] Solution scaffold (SupportHub.slnx, 6 projects, references, NuGet packages) — backend
+- [x] BaseEntity class — backend
+- [x] Result&lt;T&gt; and PagedResult&lt;T&gt; — backend
+- [x] UserRole enum — backend
 
-### Wave 2 — Entities
-- [ ] Company entity — backend
-- [ ] Division entity — backend
-- [ ] ApplicationUser entity — backend
-- [ ] UserCompanyRole entity — backend
-- [ ] AuditLogEntry entity — backend
+### Wave 2 — Entities ✅
+- [x] Company entity — backend
+- [x] Division entity — backend
+- [x] ApplicationUser entity — backend
+- [x] UserCompanyRole entity — backend
+- [x] AuditLogEntry entity — backend
 
-### Wave 3 — EF Core Configuration & DbContext
-- [ ] SupportHubDbContext with soft-delete filter — backend
-- [ ] AuditableEntityInterceptor — backend
-- [ ] Entity configurations (Company, Division, ApplicationUser, UserCompanyRole, AuditLogEntry) — backend
-- [ ] Initial migration — backend
+### Wave 3 — EF Core Configuration & DbContext ✅
+- [x] SupportHubDbContext with soft-delete filter — backend
+- [x] AuditableEntityInterceptor — backend
+- [x] Entity configurations (Company, Division, ApplicationUser, UserCompanyRole, AuditLogEntry) — backend
+- [x] ICurrentUserService stub (UserId, DisplayName, Email) — backend
+- [x] DependencyInjection.cs (Infrastructure) — backend
+- [x] SupportHubDbContextFactory (design-time) — backend
+- [x] Initial migration (InitialCreate) — backend
 
-### Wave 4 — Authentication & Authorization
-- [ ] Azure AD configuration — service
-- [ ] ICurrentUserService interface + implementation — backend/service
-- [ ] Authorization policies (SuperAdmin, Admin, Agent) — service
+### Wave 4 — Authentication & Authorization ✅
+- [x] Azure AD configuration (Program.cs + appsettings.json) — service
+- [x] ICurrentUserService interface expanded + CurrentUserService implementation — backend/service
+- [x] Authorization policies (SuperAdmin, Admin, Agent) in Program.cs — service
+- [x] MudBlazor, Serilog, AddInfrastructure wired up in Program.cs — service
 
-### Wave 5 — Service Interfaces & Implementations
-- [ ] ICompanyService + CompanyService — backend/service
-- [ ] IUserService + UserService — backend/service
-- [ ] IAuditService + AuditService — backend/service
-- [ ] DTOs (CompanyDto, UserDto, etc.) — backend
+### Wave 5 — Service Interfaces & Implementations ✅
+- [x] ICompanyService + CompanyService — backend/service
+- [x] IUserService + UserService — backend/service
+- [x] IAuditService + AuditService — backend/service
+- [x] DTOs (CompanyDto, DivisionDto, UserDto, UserCompanyRoleDto, request types) — backend
+- [x] DependencyInjection.cs updated with service registrations — service
 
-### Wave 6 — Blazor UI Pages
-- [ ] MainLayout + NavMenu — ui
-- [ ] Company List page — ui
-- [ ] Company Detail/Edit page — ui
-- [ ] User List page — ui
-- [ ] User Detail page — ui
-- [ ] Dashboard placeholder — ui
-- [ ] CompaniesController — api
-- [ ] UsersController — api
+### Wave 6 — Blazor UI Pages ✅
+- [x] MainLayout + NavMenu (MudBlazor layout, drawer, auth display) — ui
+- [x] Companies.razor (/admin/companies) — ui
+- [x] CompanyFormDialog.razor (create/edit dialog) — ui
+- [x] Users.razor (/admin/users) — ui
+- [x] UserDetail.razor (/admin/users/{id}) with role assignment — ui
+- [x] Dashboard.razor (/) placeholder — ui
+- [x] CompaniesController (5 endpoints) — api
+- [x] UsersController (5 endpoints + AssignRoleRequest) — api
+- [x] _Imports.razor updated with global usings — ui
 
-### Wave 7 — Tests
-- [ ] CompanyServiceTests — test
-- [ ] UserServiceTests — test
-- [ ] AuditServiceTests — test
+### Wave 7 — Tests ✅
+- [x] TestDbContextFactory helper — test
+- [x] CompanyServiceTests (12 tests) — test
+- [x] UserServiceTests (11 tests) — test
+- [x] AuditServiceTests (5 tests) — test
 
-**Phase 1 Status:** Not Started
+### Review Fixes (post-review)
+- [x] C-1: Company isolation enforced in CompanyService (GetUserRolesAsync + HasAccessToCompanyAsync) — service
+- [x] C-2: Company isolation enforced in UserService AssignRoleAsync/RemoveRoleAsync — service
+- [x] H-1: Server-side search in IUserService.GetUsersAsync + UserService + Users.razor + UsersController — service/ui/api
+- [x] M-1: AuditLogEntry XML comment documenting BaseEntity exemption — backend
+- [x] M-2: CompanyFormDialog Code field HelperText updated — ui
+- [x] Diagnostics: Primary constructor + StringComparison.OrdinalIgnoreCase in CompanyService — service
+- [x] Isolation unit tests (4 CompanyService + 2 UserService = 6 new tests) — test
+
+**Phase 1 Status:** ✅ Complete — 34/34 tests passing, 0 build errors, review issues resolved
 
 ---
 
 ## Phase 2 — Core Ticketing
-### Wave 1 — Domain Entities & Enums
-- [ ] TicketStatus, TicketPriority, TicketSource, MessageDirection enums — backend
-- [ ] Ticket entity — backend
-- [ ] TicketMessage entity — backend
-- [ ] TicketAttachment entity — backend
-- [ ] InternalNote entity — backend
-- [ ] TicketTag entity — backend
-- [ ] CannedResponse entity — backend
+### Wave 1 — Domain Entities & Enums ✅
+- [x] TicketStatus, TicketPriority, TicketSource, MessageDirection enums — backend
+- [x] Ticket entity — backend
+- [x] TicketMessage entity — backend
+- [x] TicketAttachment entity — backend
+- [x] InternalNote entity — backend
+- [x] TicketTag entity — backend
+- [x] CannedResponse entity — backend
+- [x] SupportHubDbContext updated with 6 new DbSets — backend
 
-### Wave 2 — EF Configurations & Migration
-- [ ] Entity configurations for all Phase 2 entities — backend
-- [ ] AddCoreTicketing migration — backend
+### Wave 2 — EF Configurations & Migration ✅
+- [x] TicketConfiguration, TicketMessageConfiguration, TicketAttachmentConfiguration — backend
+- [x] InternalNoteConfiguration, TicketTagConfiguration, CannedResponseConfiguration — backend
+- [x] AddCoreTicketing migration — backend
 
-### Wave 3 — Service Interfaces & DTOs
-- [ ] All Phase 2 DTOs — backend
-- [ ] ITicketService, ITicketMessageService, IInternalNoteService — backend
-- [ ] IFileStorageService, IAttachmentService — backend
-- [ ] ICannedResponseService, ITagService — backend
+### Wave 3 — Service Interfaces & DTOs ✅
+- [x] TicketDtos.cs (TicketDto, TicketSummaryDto, CreateTicketRequest, UpdateTicketRequest, TicketFilterRequest) — backend
+- [x] TicketMessageDtos.cs, TicketAttachmentDto.cs, InternalNoteDtos.cs, TicketTagDto.cs, CannedResponseDtos.cs — backend
+- [x] ITicketService, ITicketMessageService, IInternalNoteService — backend
+- [x] IFileStorageService, IAttachmentService — backend
+- [x] ICannedResponseService, ITagService — backend
 
-### Wave 4 — Service Implementations
-- [ ] TicketService — service
-- [ ] TicketMessageService — service
-- [ ] InternalNoteService — service
-- [ ] LocalFileStorageService — infrastructure
-- [ ] AttachmentService — service
-- [ ] CannedResponseService — service
-- [ ] TagService — service
+### Wave 4 — Service Implementations ✅
+- [x] TicketService (ticket number gen, company isolation, status machine, lifecycle timestamps) — service
+- [x] TicketMessageService (FirstResponseAt, auto New→Open on outbound) — service
+- [x] InternalNoteService (role check, author tracking) — service
+- [x] LocalFileStorageService (date-based directories, path sanitization) — infrastructure
+- [x] AttachmentService (size/extension validation, delegates to IFileStorageService) — service
+- [x] CannedResponseService (company+global queries, active filter, ordered) — service
+- [x] TagService (normalization, dedup, soft-delete, frequency aggregation) — service
+- [x] DependencyInjection.cs updated with 7 new service registrations — infrastructure
+- [x] appsettings.json updated with FileStorage config — infrastructure
 
-### Wave 5 — Blazor UI Pages & Components
-- [ ] Create Ticket page — ui
-- [ ] Ticket List page — ui
-- [ ] Ticket Detail page — ui
-- [ ] Canned Responses Admin page — ui
-- [ ] Shared components (StatusChip, PriorityChip, Timeline, etc.) — ui
+### Wave 5 — Blazor UI Pages & Components ✅
+- [x] CreateTicket.razor (/tickets/create) — ui
+- [x] TicketList.razor (/tickets) with server-side grid + filters — ui
+- [x] TicketDetail.razor (/tickets/{id}) two-column layout — ui
+- [x] CannedResponses.razor (/admin/canned-responses) + CannedResponseFormDialog.razor — ui
+- [x] TicketStatusChip, TicketPriorityChip, ConversationTimeline, TagInput shared components — ui
+- [x] NavMenu updated with Tickets + Canned Responses nav links — ui
+- [x] _Imports.razor updated with Shared namespace — ui
 
-### Wave 6 — API Controllers
-- [ ] TicketsController — api
-- [ ] TicketMessagesController — api
-- [ ] TicketNotesController — api
-- [ ] TicketAttachmentsController — api
-- [ ] TicketTagsController — api
-- [ ] CannedResponsesController — api
+### Wave 6 — API Controllers ✅
+- [x] TicketsController (15 endpoints: CRUD + assign + status + priority + messages + notes + attachments + tags) — api
+- [x] CannedResponsesController (4 endpoints) — api
 
-### Wave 7 — Tests
-- [ ] TicketServiceTests — test
-- [ ] TicketMessageServiceTests — test
-- [ ] InternalNoteServiceTests — test
-- [ ] AttachmentServiceTests — test
-- [ ] CannedResponseServiceTests — test
-- [ ] TagServiceTests — test
+### Wave 7 — Tests ✅
+- [x] TicketServiceTests (16 tests) — test
+- [x] TicketMessageServiceTests (6 tests) — test
+- [x] InternalNoteServiceTests (5 tests) — test
+- [x] AttachmentServiceTests (7 tests) — test
+- [x] CannedResponseServiceTests (6 tests) — test
+- [x] TagServiceTests (8 tests) — test
 
-**Phase 2 Status:** Not Started
+**Phase 2 Status:** ✅ Complete — 82/82 tests passing, 0 build errors, 0 warnings
 
 ---
 
 ## Phase 3 — Email Integration
-### Wave 1 — Domain Entities & Configuration
-- [ ] EmailConfiguration entity — backend
-- [ ] EmailProcessingLog entity — backend
-- [ ] EF configurations + migration — backend
+### Wave 1 — Domain Entities & Configuration ✅
+- [x] EmailConfiguration entity — backend
+- [x] EmailProcessingLog entity — backend
+- [x] EF configurations (EmailConfigurationConfiguration, EmailProcessingLogConfiguration) — backend
+- [x] AddEmailIntegration migration — backend
 
-### Wave 2 — Graph API Client & Email Services
-- [ ] IGraphClientFactory interface + implementation — backend/infrastructure
-- [ ] IEmailPollingService, IEmailSendingService, IEmailProcessingService interfaces — backend
-- [ ] IAiClassificationService interface — backend
-- [ ] InboundEmailMessage + related DTOs — backend
+### Wave 2 — Graph API Client & Email Services ✅
+- [x] IGraphClientFactory interface — backend
+- [x] IEmailPollingService, IEmailSendingService, IEmailProcessingService interfaces — backend
+- [x] IAiClassificationService interface — backend
+- [x] IEmailConfigurationService interface — backend
+- [x] InboundEmailMessage, EmailAttachment, AiClassificationResult DTOs — backend
+- [x] EmailConfigurationDtos, EmailProcessingLogDtos — backend
 
-### Wave 3 — Service Implementations
-- [ ] EmailPollingService — infrastructure
-- [ ] EmailSendingService — infrastructure
-- [ ] EmailProcessingService — infrastructure
-- [ ] NoOpAiClassificationService — infrastructure
+### Wave 3 — Service Implementations ✅
+- [x] GraphClientFactory (Azure AD app-only credential) — infrastructure
+- [x] EmailPollingService (Graph delta query, de-dup via EmailProcessingLog) — infrastructure
+- [x] EmailSendingService (Graph send, X-SupportHub-TicketId header, outbound message record) — infrastructure
+- [x] EmailProcessingService (header+subject threading, AI classification, ticket create/append) — infrastructure
+- [x] NoOpAiClassificationService (stub, Confidence=0) — infrastructure
+- [x] EmailConfigurationService (CRUD + logs, company isolation) — infrastructure
 
-### Wave 4 — Hangfire Job Configuration
-- [ ] EmailPollingJob — infrastructure
-- [ ] Hangfire setup in Program.cs — infrastructure
+### Wave 4 — Hangfire Job Configuration ✅
+- [x] EmailPollingJob (polls all active configs, respects PollingIntervalMinutes) — infrastructure
+- [x] Hangfire setup in Program.cs (SQL Server storage, Hangfire schema) — infrastructure
+- [x] HangfireSuperAdminFilter (dashboard restricted to SuperAdmin) — web
+- [x] DependencyInjection.cs updated with 6 new Phase 3 service registrations — infrastructure
 
-### Wave 5 — Admin UI
-- [ ] Email Configuration page — ui
-- [ ] Email Processing Log Viewer — ui
+### Wave 5 — Admin UI ✅
+- [x] EmailConfigurations.razor (/admin/email-configurations) — ui
+- [x] EmailConfigurationFormDialog.razor (create/edit dialog) — ui
+- [x] EmailLogs.razor (/admin/email-logs) — ui
+- [x] NavMenu updated with Email Configurations + Email Logs links — ui
 
-### Wave 6 — API Endpoints
-- [ ] EmailConfigurationsController — api
+### Wave 6 — API Endpoints ✅
+- [x] EmailConfigurationsController (7 endpoints: CRUD + test + logs) — api
+- [x] EmailInboundController (stub /api/email/inbound route) — api
 
-### Wave 7 — Tests
-- [ ] EmailPollingServiceTests — test
-- [ ] EmailProcessingServiceTests — test
-- [ ] EmailSendingServiceTests — test
+### Wave 7 — Tests ✅
+- [x] NoOpAiClassificationServiceTests (5 tests) — test
+- [x] EmailProcessingServiceTests (threading, create, append, skip, AI) — test
+- [x] EmailSendingServiceTests (guard cases, subject format) — test
+- [x] EmailPollingServiceTests (not found, inactive, error handling) — test
+- [x] EmailPollingJobTests (active/inactive configs, polling interval, error isolation) — test
 
-**Phase 3 Status:** Not Started
+**Phase 3 Status:** ✅ Complete — 107/107 tests passing, 0 build errors, 0 warnings
 
 ---
 

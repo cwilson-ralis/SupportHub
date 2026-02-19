@@ -1,0 +1,106 @@
+@page "/admin/email-configurations"
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = "Admin")]
+@inject IEmailConfigurationService EmailConfigService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Email Configurations</PageTitle>
+
+<div class="d-flex justify-space-between align-center mb-4">
+    <MudText Typo="Typo.h5">Email Configurations</MudText>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+               OnClick="OpenCreateDialog">Add Configuration</MudButton>
+</div>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudDataGrid T="EmailConfigurationDto" Items="@_configs" Hover="true" Dense="true" Striped="true">
+        <Columns>
+            <PropertyColumn Property="x => x.CompanyName" Title="Company" />
+            <PropertyColumn Property="x => x.SharedMailboxAddress" Title="Mailbox" />
+            <PropertyColumn Property="x => x.DisplayName" Title="Display Name" />
+            <TemplateColumn Title="Active">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Color="@(context.Item.IsActive ? Color.Success : Color.Default)">
+                        @(context.Item.IsActive ? "Active" : "Inactive")
+                    </MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="x => x.PollingIntervalMinutes" Title="Poll (min)" />
+            <TemplateColumn Title="Last Polled">
+                <CellTemplate>@(context.Item.LastPolledAt?.ToLocalTime().ToString("g") ?? "Never")</CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Auto-Create">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Color="@(context.Item.AutoCreateTickets ? Color.Info : Color.Default)">
+                        @(context.Item.AutoCreateTickets ? "Yes" : "No")
+                    </MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Actions">
+                <CellTemplate>
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                   OnClick="@(() => OpenEditDialog(context.Item))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                   OnClick="@(() => DeleteAsync(context.Item.Id))" />
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+    </MudDataGrid>
+}
+
+@code {
+    private List<EmailConfigurationDto> _configs = [];
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        var result = await EmailConfigService.GetAllAsync();
+        if (result.IsSuccess)
+            _configs = result.Value!.ToList();
+        _loading = false;
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var dialog = await DialogService.ShowAsync<EmailConfigurationFormDialog>("Add Email Configuration");
+        var result = await dialog.Result;
+        if (!result!.Canceled)
+            await LoadAsync();
+    }
+
+    private async Task OpenEditDialog(EmailConfigurationDto config)
+    {
+        var parameters = new DialogParameters { ["Existing"] = config, ["IsEdit"] = true };
+        var dialog = await DialogService.ShowAsync<EmailConfigurationFormDialog>("Edit Email Configuration", parameters);
+        var result = await dialog.Result;
+        if (!result!.Canceled)
+            await LoadAsync();
+    }
+
+    private async Task DeleteAsync(Guid id)
+    {
+        var confirm = await DialogService.ShowMessageBox("Delete", "Delete this email configuration?", "Delete", "Cancel");
+        if (confirm == true)
+        {
+            var result = await EmailConfigService.DeleteAsync(id);
+            if (result.IsSuccess)
+            {
+                Snackbar.Add("Configuration deleted.", Severity.Success);
+                await LoadAsync();
+            }
+            else
+            {
+                Snackbar.Add(result.Error ?? "Delete failed.", Severity.Error);
+            }
+        }
+    }
+}

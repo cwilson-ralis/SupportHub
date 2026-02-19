@@ -9,7 +9,11 @@
       "Bash(git -C \"C:/Users/christopher.wilson/source/repos/SupportHub\" show b1b4b51:docs/Phase-4-SLA-Satisfaction.md)",
       "Bash(git -C \"C:/Users/christopher.wilson/source/repos/SupportHub\" show b1b4b51:docs/Phase-5-KB-Reporting.md)",
       "Bash(git -C \"C:/Users/christopher.wilson/source/repos/SupportHub\" show b1b4b51:docs/Phase-6-Polish-Hardening.md)",
-      "Bash(git -C \"C:/Users/christopher.wilson/source/repos/SupportHub\" show b1b4b51:CLAUDE.md)"
+      "Bash(git -C \"C:/Users/christopher.wilson/source/repos/SupportHub\" show b1b4b51:CLAUDE.md)",
+      "Bash(dotnet:*)",
+      "Bash(ls:*)",
+      "Bash(export PATH=\"$PATH:/Users/chris/.dotnet/tools\")",
+      "Bash(find:*)"
     ]
   }
 }

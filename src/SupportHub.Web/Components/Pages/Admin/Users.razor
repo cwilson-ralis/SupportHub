@@ -1,0 +1,76 @@
+@page "/admin/users"
+@attribute [Authorize(Policy = "SuperAdmin")]
+@inject IUserService UserService
+@inject ISnackbar Snackbar
+@using SupportHub.Application.DTOs
+@using SupportHub.Application.Interfaces
+
+<PageTitle>Users — Ralis Support Hub</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Users</MudText>
+
+<MudPaper Class="pa-4">
+    <MudTextField @bind-Value="_searchTerm" Label="Search" Adornment="Adornment.Start"
+                  AdornmentIcon="@Icons.Material.Filled.Search" Immediate="true"
+                  DebounceInterval="300" OnDebounceIntervalElapsed="LoadUsers"
+                  Class="mb-4" Style="max-width: 400px;" />
+
+    <MudDataGrid T="UserDto" Items="_users" Loading="_loading"
+                 Hover="true" Striped="true" Dense="true">
+        <Columns>
+            <PropertyColumn Property="x => x.DisplayName" Title="Display Name" />
+            <PropertyColumn Property="x => x.Email" Title="Email" />
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string" Color="@(context.Item.IsActive ? Color.Success : Color.Default)"
+                             Size="Size.Small">
+                        @(context.Item.IsActive ? "Active" : "Inactive")
+                    </MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Roles">
+                <CellTemplate>
+                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
+                        @foreach (var role in context.Item.Roles)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Primary">
+                                @role.CompanyName: @role.Role
+                            </MudChip>
+                        }
+                    </MudStack>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Actions" Sortable="false">
+                <CellTemplate>
+                    <MudIconButton Icon="@Icons.Material.Filled.ManageAccounts"
+                                   Size="Size.Small" Color="Color.Primary"
+                                   Href="@($"/admin/users/{context.Item.Id}")"
+                                   aria-label="Manage" />
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+    </MudDataGrid>
+</MudPaper>
+
+@code {
+    private List<UserDto> _users = [];
+    private bool _loading = true;
+    private string _searchTerm = string.Empty;
+    private int _pageSize = 20;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers()
+    {
+        _loading = true;
+        var result = await UserService.GetUsersAsync(1, _pageSize, _searchTerm);
+        if (result.IsSuccess && result.Value is not null)
+        {
+            _users = result.Value.Items.ToList();
+        }
+        _loading = false;
+    }
+}

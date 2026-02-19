@@ -1,0 +1,107 @@
+@page "/tickets/create"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject ITicketService TicketService
+@inject ITagService TagService
+@inject ICompanyService CompanyService
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Create Ticket</PageTitle>
+<MudText Typo="Typo.h5" Class="mb-4">Create New Ticket</MudText>
+
+<MudPaper Class="pa-4" MaxWidth="800px">
+    <MudForm @ref="_form" @bind-IsValid="_isValid">
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="Guid" Label="Company" @bind-Value="_companyId" Required="true" RequiredError="Company is required">
+                    @foreach (var c in _companies)
+                    {
+                        <MudSelectItem Value="@c.Id">@c.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="TicketPriority" Label="Priority" @bind-Value="_priority">
+                    @foreach (var p in Enum.GetValues<TicketPriority>())
+                    {
+                        <MudSelectItem Value="@p">@p.ToString()</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField Label="Requester Name" @bind-Value="_requesterName" Required="true" RequiredError="Requester name is required" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField Label="Requester Email" @bind-Value="_requesterEmail" Required="true" InputType="InputType.Email" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField Label="System / Application" @bind-Value="_system" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField Label="Issue Type" @bind-Value="_issueType" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField Label="Subject" @bind-Value="_subject" Required="true" RequiredError="Subject is required" MaxLength="500" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField Label="Description" @bind-Value="_description" Required="true" Lines="6" />
+            </MudItem>
+            <MudItem xs="12">
+                <TagInput @bind-Tags="_tags" CompanyId="_companyId == Guid.Empty ? null : _companyId" />
+            </MudItem>
+            <MudItem xs="12">
+                <div class="d-flex justify-end gap-2">
+                    <MudButton Variant="Variant.Text" OnClick="@(() => Nav.NavigateTo("/tickets"))">Cancel</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SubmitAsync" Disabled="_submitting">
+                        @if (_submitting) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /> }
+                        Create Ticket
+                    </MudButton>
+                </div>
+            </MudItem>
+        </MudGrid>
+    </MudForm>
+</MudPaper>
+
+@code {
+    private MudForm _form = null!;
+    private bool _isValid;
+    private bool _submitting;
+    private List<CompanyDto> _companies = [];
+    private List<string> _tags = [];
+
+    private Guid _companyId;
+    private TicketPriority _priority = TicketPriority.Medium;
+    private string _requesterName = string.Empty;
+    private string _requesterEmail = string.Empty;
+    private string? _system;
+    private string? _issueType;
+    private string _subject = string.Empty;
+    private string _description = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await CompanyService.GetCompaniesAsync(1, 100);
+        if (result.IsSuccess) _companies = result.Value!.Items.ToList();
+    }
+
+    private async Task SubmitAsync()
+    {
+        await _form.Validate();
+        if (!_isValid) return;
+        _submitting = true;
+        var request = new CreateTicketRequest(_companyId, _subject, _description, _priority,
+            TicketSource.WebForm, _requesterEmail, _requesterName, _system, _issueType, _tags);
+        var result = await TicketService.CreateTicketAsync(request);
+        _submitting = false;
+        if (result.IsSuccess)
+        {
+            Snackbar.Add("Ticket created successfully", Severity.Success);
+            Nav.NavigateTo($"/tickets/{result.Value!.Id}");
+        }
+        else
+        {
+            Snackbar.Add($"Error: {result.Error}", Severity.Error);
+        }
+    }
+}

@@ -1,0 +1,16 @@
+@namespace SupportHub.Web.Components.Shared
+
+<MudChip T="string" Color="@GetColor()" Size="Size.Small">@Priority.ToString()</MudChip>
+
+@code {
+    [Parameter] public TicketPriority Priority { get; set; }
+
+    private Color GetColor() => Priority switch
+    {
+        TicketPriority.Low => Color.Default,
+        TicketPriority.Medium => Color.Info,
+        TicketPriority.High => Color.Warning,
+        TicketPriority.Urgent => Color.Error,
+        _ => Color.Default
+    };
+}

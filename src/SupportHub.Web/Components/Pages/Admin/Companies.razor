@@ -1,0 +1,133 @@
+@page "/admin/companies"
+@attribute [Authorize(Policy = "SuperAdmin")]
+@inject ICompanyService CompanyService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@using SupportHub.Application.DTOs
+@using SupportHub.Application.Interfaces
+
+<PageTitle>Companies — Ralis Support Hub</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Companies</MudText>
+
+<MudPaper Class="pa-4">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudTextField @bind-Value="_searchTerm" Label="Search" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" Immediate="true"
+                      DebounceInterval="300" OnDebounceIntervalElapsed="LoadCompanies"
+                      Class="mr-auto" Style="max-width: 400px;" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">
+            Add Company
+        </MudButton>
+    </MudStack>
+
+    <MudDataGrid T="CompanyDto" Items="_companies" Loading="_loading"
+                 Hover="true" Striped="true" Dense="true">
+        <Columns>
+            <PropertyColumn Property="x => x.Name" Title="Name" />
+            <PropertyColumn Property="x => x.Code" Title="Code" />
+            <TemplateColumn Title="Status">
+                <CellTemplate>
+                    <MudChip T="string" Color="@(context.Item.IsActive ? Color.Success : Color.Default)"
+                             Size="Size.Small">
+                        @(context.Item.IsActive ? "Active" : "Inactive")
+                    </MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="x => x.DivisionCount" Title="Divisions" />
+            <TemplateColumn Title="Created">
+                <CellTemplate>@context.Item.CreatedAt.LocalDateTime.ToString("d")</CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Actions" Sortable="false">
+                <CellTemplate>
+                    <MudStack Row="true" Spacing="1">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                       Color="Color.Primary"
+                                       OnClick="@(() => OpenEditDialog(context.Item))"
+                                       aria-label="Edit" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                       Color="Color.Error"
+                                       OnClick="@(() => DeleteCompanyAsync(context.Item))"
+                                       aria-label="Delete" />
+                    </MudStack>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+        <PagerContent>
+            <MudDataGridPager T="CompanyDto" />
+        </PagerContent>
+    </MudDataGrid>
+</MudPaper>
+
+@code {
+    private List<CompanyDto> _companies = [];
+    private bool _loading = true;
+    private string _searchTerm = string.Empty;
+    private int _page = 1;
+    private int _pageSize = 20;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCompanies();
+    }
+
+    private async Task LoadCompanies()
+    {
+        _loading = true;
+        var result = await CompanyService.GetCompaniesAsync(_page, _pageSize, _searchTerm);
+        if (result.IsSuccess && result.Value is not null)
+        {
+            _companies = result.Value.Items.ToList();
+        }
+        _loading = false;
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var dialog = await DialogService.ShowAsync<CompanyFormDialog>("Add Company",
+            new DialogParameters<CompanyFormDialog> { { x => x.IsEdit, false } });
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+            await LoadCompanies();
+    }
+
+    private async Task OpenEditDialog(CompanyDto company)
+    {
+        var parameters = new DialogParameters<CompanyFormDialog>
+        {
+            { x => x.IsEdit, true },
+            { x => x.CompanyId, company.Id },
+            { x => x.Name, company.Name },
+            { x => x.Code, company.Code },
+            { x => x.IsActive, company.IsActive },
+            { x => x.Description, company.Description }
+        };
+        var dialog = await DialogService.ShowAsync<CompanyFormDialog>("Edit Company", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+            await LoadCompanies();
+    }
+
+    private async Task DeleteCompanyAsync(CompanyDto company)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Delete Company",
+            $"Are you sure you want to delete '{company.Name}'? This action cannot be undone.",
+            yesText: "Delete", cancelText: "Cancel");
+
+        if (confirmed == true)
+        {
+            var result = await CompanyService.DeleteCompanyAsync(company.Id);
+            if (result.IsSuccess)
+            {
+                Snackbar.Add("Company deleted.", Severity.Success);
+                await LoadCompanies();
+            }
+            else
+            {
+                Snackbar.Add(result.Error ?? "Failed to delete company.", Severity.Error);
+            }
+        }
+    }
+}

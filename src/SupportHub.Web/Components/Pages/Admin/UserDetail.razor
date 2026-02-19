@@ -1,0 +1,174 @@
+@page "/admin/users/{Id:guid}"
+@attribute [Authorize(Policy = "SuperAdmin")]
+@inject IUserService UserService
+@inject ICompanyService CompanyService
+@inject ISnackbar Snackbar
+@using SupportHub.Application.DTOs
+@using SupportHub.Application.Interfaces
+@using SupportHub.Domain.Enums
+
+<PageTitle>User Detail — Ralis Support Hub</PageTitle>
+
+@if (_user is null)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudText Typo="Typo.h4" Class="mb-4">@_user.DisplayName</MudText>
+
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudCard>
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">User Information</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudText><strong>Email:</strong> @_user.Email</MudText>
+                    <MudText Class="mt-2"><strong>Azure AD ID:</strong> @_user.AzureAdObjectId</MudText>
+                    <MudText Class="mt-2">
+                        <strong>Status:</strong>
+                        <MudChip T="string" Color="@(_user.IsActive ? Color.Success : Color.Default)"
+                                 Size="Size.Small" Class="ml-1">
+                            @(_user.IsActive ? "Active" : "Inactive")
+                        </MudChip>
+                    </MudText>
+                    <MudText Class="mt-2"><strong>Created:</strong> @_user.CreatedAt.LocalDateTime.ToString("g")</MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12">
+            <MudCard>
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Company Role Assignments</MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Add"
+                                   OnClick="() => _showAssignForm = !_showAssignForm">
+                            Assign Role
+                        </MudButton>
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent>
+                    @if (_showAssignForm)
+                    {
+                        <MudPaper Elevation="0" Class="pa-3 mb-4" Style="background: var(--mud-palette-background-grey);">
+                            <MudText Typo="Typo.subtitle2" Class="mb-2">Assign New Role</MudText>
+                            <MudStack Row="true" AlignItems="AlignItems.End" Spacing="2">
+                                <MudSelect @bind-Value="_selectedCompanyId" Label="Company" Style="min-width: 200px;">
+                                    @foreach (var company in _companies)
+                                    {
+                                        <MudSelectItem Value="company.Id">@company.Name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                                <MudSelect @bind-Value="_selectedRole" Label="Role" Style="min-width: 150px;">
+                                    @foreach (UserRole role in Enum.GetValues<UserRole>())
+                                    {
+                                        <MudSelectItem Value="role">@role</MudSelectItem>
+                                    }
+                                </MudSelect>
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                           OnClick="AssignRoleAsync">
+                                    Assign
+                                </MudButton>
+                            </MudStack>
+                        </MudPaper>
+                    }
+
+                    <MudTable Items="_user.Roles" Dense="true" Hover="true">
+                        <HeaderContent>
+                            <MudTh>Company</MudTh>
+                            <MudTh>Role</MudTh>
+                            <MudTh>Actions</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.CompanyName</MudTd>
+                            <MudTd>
+                                <MudChip T="string" Color="Color.Primary" Size="Size.Small">
+                                    @context.Role
+                                </MudChip>
+                            </MudTd>
+                            <MudTd>
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                               Size="Size.Small" Color="Color.Error"
+                                               OnClick="@(() => RemoveRoleAsync(context))"
+                                               aria-label="Remove" />
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private UserDto? _user;
+    private List<CompanyDto> _companies = [];
+    private bool _showAssignForm;
+    private Guid _selectedCompanyId;
+    private UserRole _selectedRole = UserRole.Agent;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(LoadUserAsync(), LoadCompaniesAsync());
+    }
+
+    private async Task LoadUserAsync()
+    {
+        var result = await UserService.GetUserByIdAsync(Id);
+        if (result.IsSuccess)
+            _user = result.Value;
+    }
+
+    private async Task LoadCompaniesAsync()
+    {
+        var result = await CompanyService.GetCompaniesAsync(1, 100);
+        if (result.IsSuccess && result.Value is not null)
+            _companies = result.Value.Items.ToList();
+    }
+
+    private async Task AssignRoleAsync()
+    {
+        if (_selectedCompanyId == Guid.Empty)
+        {
+            Snackbar.Add("Please select a company.", Severity.Warning);
+            return;
+        }
+
+        var result = await UserService.AssignRoleAsync(Id, _selectedCompanyId, _selectedRole);
+        if (result.IsSuccess)
+        {
+            Snackbar.Add("Role assigned.", Severity.Success);
+            _showAssignForm = false;
+            await LoadUserAsync();
+        }
+        else
+        {
+            Snackbar.Add(result.Error ?? "Failed to assign role.", Severity.Error);
+        }
+    }
+
+    private async Task RemoveRoleAsync(UserCompanyRoleDto roleDto)
+    {
+        if (!Enum.TryParse<UserRole>(roleDto.Role, out var role)) return;
+
+        var result = await UserService.RemoveRoleAsync(Id, roleDto.CompanyId, role);
+        if (result.IsSuccess)
+        {
+            Snackbar.Add("Role removed.", Severity.Success);
+            await LoadUserAsync();
+        }
+        else
+        {
+            Snackbar.Add(result.Error ?? "Failed to remove role.", Severity.Error);
+        }
+    }
+}

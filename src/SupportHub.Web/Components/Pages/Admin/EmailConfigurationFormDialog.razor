@@ -1,0 +1,89 @@
+@inject IEmailConfigurationService EmailConfigService
+@inject ICompanyService CompanyService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudSelect T="Guid" @bind-Value="_companyId" Label="Company" Required="true" Disabled="IsEdit">
+                @foreach (var company in _companies)
+                {
+                    <MudSelectItem Value="@company.Id">@company.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField @bind-Value="_mailbox" Label="Shared Mailbox Address" Required="true" Class="mt-3" />
+            <MudTextField @bind-Value="_displayName" Label="Display Name" Required="true" Class="mt-3" />
+            <MudNumericField T="int" @bind-Value="_pollingIntervalMinutes" Label="Polling Interval (minutes)" Min="1" Max="60" Class="mt-3" />
+            <MudSelect T="TicketPriority" @bind-Value="_defaultPriority" Label="Default Priority" Class="mt-3">
+                @foreach (TicketPriority p in Enum.GetValues<TicketPriority>())
+                {
+                    <MudSelectItem Value="@p">@p</MudSelectItem>
+                }
+            </MudSelect>
+            <MudSwitch T="bool" @bind-Value="_autoCreateTickets" Label="Auto-Create Tickets" Class="mt-3" />
+            <MudSwitch T="bool" @bind-Value="_isActive" Label="Active" Class="mt-3" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="SubmitAsync">@(IsEdit ? "Save" : "Create")</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public bool IsEdit { get; set; }
+    [Parameter] public EmailConfigurationDto? Existing { get; set; }
+
+    private MudForm _form = null!;
+    private List<CompanyDto> _companies = [];
+
+    private Guid _companyId;
+    private string _mailbox = string.Empty;
+    private string _displayName = string.Empty;
+    private int _pollingIntervalMinutes = 2;
+    private TicketPriority _defaultPriority = TicketPriority.Medium;
+    private bool _autoCreateTickets = true;
+    private bool _isActive = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await CompanyService.GetCompaniesAsync(1, 100);
+        if (result.IsSuccess)
+            _companies = result.Value!.Items.ToList();
+
+        if (Existing is not null)
+        {
+            _companyId = Existing.CompanyId;
+            _mailbox = Existing.SharedMailboxAddress;
+            _displayName = Existing.DisplayName;
+            _pollingIntervalMinutes = Existing.PollingIntervalMinutes;
+            _defaultPriority = Existing.DefaultPriority;
+            _autoCreateTickets = Existing.AutoCreateTickets;
+            _isActive = Existing.IsActive;
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        await _form.Validate();
+        if (!_form.IsValid) return;
+
+        if (IsEdit && Existing is not null)
+        {
+            var req = new UpdateEmailConfigurationRequest(_displayName, _isActive, _pollingIntervalMinutes, _autoCreateTickets, _defaultPriority);
+            var result = await EmailConfigService.UpdateAsync(Existing.Id, req);
+            if (result.IsSuccess) { Snackbar.Add("Configuration updated.", Severity.Success); MudDialog.Close(DialogResult.Ok(true)); }
+            else Snackbar.Add(result.Error ?? "Update failed.", Severity.Error);
+        }
+        else
+        {
+            var req = new CreateEmailConfigurationRequest(_companyId, _mailbox, _displayName, _isActive, _pollingIntervalMinutes, _autoCreateTickets, _defaultPriority);
+            var result = await EmailConfigService.CreateAsync(req);
+            if (result.IsSuccess) { Snackbar.Add("Configuration created.", Severity.Success); MudDialog.Close(DialogResult.Ok(true)); }
+            else Snackbar.Add(result.Error ?? "Create failed.", Severity.Error);
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

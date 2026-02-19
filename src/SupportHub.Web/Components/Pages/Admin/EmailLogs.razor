@@ -1,0 +1,116 @@
+@page "/admin/email-logs"
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = "Admin")]
+@inject IEmailConfigurationService EmailConfigService
+@inject ISnackbar Snackbar
+
+<PageTitle>Email Processing Logs</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">Email Processing Logs</MudText>
+
+<MudPaper Class="pa-4 mb-4">
+    <MudGrid>
+        <MudItem xs="12" md="4">
+            <MudSelect T="Guid?" @bind-Value="_selectedConfigId" Label="Email Configuration" Clearable="true">
+                @foreach (var config in _configs)
+                {
+                    <MudSelectItem T="Guid?" Value="@((Guid?)config.Id)">@config.DisplayName (@config.CompanyName)</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudSelect T="string?" @bind-Value="_resultFilter" Label="Result" Clearable="true">
+                <MudSelectItem T="string?" Value="@("Created")">Created</MudSelectItem>
+                <MudSelectItem T="string?" Value="@("Appended")">Appended</MudSelectItem>
+                <MudSelectItem T="string?" Value="@("Skipped")">Skipped</MudSelectItem>
+                <MudSelectItem T="string?" Value="@("Failed")">Failed</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="4" Class="d-flex align-end">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadLogsAsync">Filter</MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else
+{
+    <MudDataGrid T="EmailProcessingLogDto" Items="@_filteredLogs" Hover="true" Dense="true" Striped="true">
+        <Columns>
+            <TemplateColumn Title="Processed At">
+                <CellTemplate>@context.Item.ProcessedAt.ToLocalTime().ToString("g")</CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="x => x.SenderEmail" Title="Sender" />
+            <PropertyColumn Property="x => x.Subject" Title="Subject" />
+            <TemplateColumn Title="Result">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small" Color="@GetResultColor(context.Item.ProcessingResult)">
+                        @context.Item.ProcessingResult
+                    </MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Ticket">
+                <CellTemplate>
+                    @if (context.Item.TicketId.HasValue)
+                    {
+                        <MudLink Href="@($"/tickets/{context.Item.TicketId}")">View Ticket</MudLink>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <PropertyColumn Property="x => x.ErrorMessage" Title="Error" />
+        </Columns>
+    </MudDataGrid>
+}
+
+@code {
+    private List<EmailConfigurationDto> _configs = [];
+    private List<EmailProcessingLogDto> _allLogs = [];
+    private bool _loading = true;
+    private Guid? _selectedConfigId;
+    private string? _resultFilter;
+
+    private IEnumerable<EmailProcessingLogDto> _filteredLogs =>
+        _allLogs.Where(l =>
+            (_selectedConfigId is null || l.EmailConfigurationId == _selectedConfigId) &&
+            (_resultFilter is null || l.ProcessingResult == _resultFilter));
+
+    protected override async Task OnInitializedAsync()
+    {
+        var configResult = await EmailConfigService.GetAllAsync();
+        if (configResult.IsSuccess)
+            _configs = configResult.Value!.ToList();
+        await LoadLogsAsync();
+    }
+
+    private async Task LoadLogsAsync()
+    {
+        _loading = true;
+        _allLogs.Clear();
+
+        var configsToLoad = _selectedConfigId.HasValue
+            ? _configs.Where(c => c.Id == _selectedConfigId.Value).ToList()
+            : _configs;
+
+        foreach (var config in configsToLoad)
+        {
+            var result = await EmailConfigService.GetLogsAsync(config.Id, 100);
+            if (result.IsSuccess)
+                _allLogs.AddRange(result.Value!);
+        }
+
+        _allLogs = _allLogs.OrderByDescending(l => l.ProcessedAt).ToList();
+        _loading = false;
+    }
+
+    private static Color GetResultColor(string result) => result switch
+    {
+        "Created" => Color.Success,
+        "Appended" => Color.Info,
+        "Skipped" => Color.Default,
+        "Failed" => Color.Error,
+        _ => Color.Default,
+    };
+}

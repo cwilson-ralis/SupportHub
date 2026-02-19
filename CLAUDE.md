@@ -38,7 +38,7 @@ dotnet ef database update --project src/SupportHub.Infrastructure --startup-proj
 ### Solution Structure
 
 ```
-SupportHub.sln
+SupportHub.slnx
 src/
   SupportHub.Domain/           — Entities, enums, value objects
   SupportHub.Application/      — DTOs (records), service interfaces, Result<T>, PagedResult<T>
@@ -53,7 +53,7 @@ Single solution with shared service interfaces consumed by both Blazor UI and AP
 
 ### Data Model
 
-Single SQL Server database with `CompanyId` FK isolation (not per-tenant databases). Core entities: `Company`, `Division`, `Ticket`, `TicketMessage`, `TicketAttachment`, `InternalNote`, `TicketTag`, `RoutingRule`, `CannedResponse`, `AuditLog`, `SlaPolicy`, `SlaBreachRecord`, `CustomerSatisfactionRating`, `KnowledgeBaseArticle`.
+Single SQL Server database with `CompanyId` FK isolation (not per-tenant databases). Core entities: `Company`, `Division`, `Ticket`, `TicketMessage`, `TicketAttachment`, `InternalNote`, `TicketTag`, `Queue`, `RoutingRule`, `CannedResponse`, `EmailConfiguration`, `EmailProcessingLog`, `AuditLog`, `SlaPolicy`, `SlaBreachRecord`, `CustomerSatisfactionRating`, `KnowledgeBaseArticle`.
 
 ### Multi-Tenancy
 

@@ -1,0 +1,109 @@
+@page "/tickets"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject ITicketService TicketService
+@inject ICompanyService CompanyService
+@inject NavigationManager Nav
+
+<PageTitle>Tickets</PageTitle>
+
+<div class="d-flex justify-space-between align-center mb-4">
+    <MudText Typo="Typo.h5">Tickets</MudText>
+    <MudFab Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Label="New Ticket"
+            OnClick="@(() => Nav.NavigateTo("/tickets/create"))" />
+</div>
+
+@* Filter Bar *@
+<MudPaper Class="pa-3 mb-4">
+    <MudGrid>
+        <MudItem xs="12" sm="3">
+            <MudSelect T="TicketStatus?" Label="Status" @bind-Value="_filterStatus" Clearable="true">
+                @foreach (var s in Enum.GetValues<TicketStatus>())
+                {
+                    <MudSelectItem Value="@((TicketStatus?)s)">@s.ToString()</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="3">
+            <MudSelect T="TicketPriority?" Label="Priority" @bind-Value="_filterPriority" Clearable="true">
+                @foreach (var p in Enum.GetValues<TicketPriority>())
+                {
+                    <MudSelectItem Value="@((TicketPriority?)p)">@p.ToString()</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudTextField Label="Search" @bind-Value="_searchTerm" Adornment="Adornment.End"
+                          AdornmentIcon="@Icons.Material.Filled.Search" Immediate="true" />
+        </MudItem>
+        <MudItem xs="12" sm="2">
+            <MudButton Variant="Variant.Text" OnClick="ClearFilters" Class="mt-2">Clear</MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudDataGrid T="TicketSummaryDto" ServerData="LoadDataAsync" @ref="_grid" RowClick="OnRowClick"
+             Hover="true" Dense="true" Striped="true">
+    <Columns>
+        <PropertyColumn Property="x => x.TicketNumber" Title="Number" />
+        <PropertyColumn Property="x => x.Subject" Title="Subject" />
+        <TemplateColumn Title="Status">
+            <CellTemplate>
+                <TicketStatusChip Status="@context.Item.Status" />
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Priority">
+            <CellTemplate>
+                <TicketPriorityChip Priority="@context.Item.Priority" />
+            </CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="x => x.RequesterName" Title="Requester" />
+        <PropertyColumn Property="x => x.CompanyName" Title="Company" />
+        <PropertyColumn Property="x => x.AssignedAgentName" Title="Agent" />
+        <PropertyColumn Property="x => x.CreatedAt" Title="Created" Format="g" />
+    </Columns>
+    <PagerContent>
+        <MudDataGridPager T="TicketSummaryDto" PageSizeOptions="new[] { 10, 25, 50 }" />
+    </PagerContent>
+</MudDataGrid>
+
+@code {
+    private MudDataGrid<TicketSummaryDto> _grid = null!;
+    private TicketStatus? _filterStatus;
+    private TicketPriority? _filterPriority;
+    private string? _searchTerm;
+
+    private async Task<GridData<TicketSummaryDto>> LoadDataAsync(GridState<TicketSummaryDto> state)
+    {
+        var filter = new TicketFilterRequest(
+            CompanyId: null,
+            Status: _filterStatus,
+            Priority: _filterPriority,
+            AssignedAgentId: null,
+            SearchTerm: _searchTerm,
+            Tags: null,
+            DateFrom: null,
+            DateTo: null,
+            Page: state.Page + 1,
+            PageSize: state.PageSize);
+
+        var result = await TicketService.GetTicketsAsync(filter);
+        if (!result.IsSuccess) return new GridData<TicketSummaryDto>();
+        return new GridData<TicketSummaryDto>
+        {
+            Items = result.Value!.Items,
+            TotalItems = result.Value.TotalCount
+        };
+    }
+
+    private void OnRowClick(DataGridRowClickEventArgs<TicketSummaryDto> args)
+        => Nav.NavigateTo($"/tickets/{args.Item.Id}");
+
+    private async Task ClearFilters()
+    {
+        _filterStatus = null;
+        _filterPriority = null;
+        _searchTerm = null;
+        await _grid.ReloadServerData();
+    }
+}

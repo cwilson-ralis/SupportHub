@@ -1,0 +1,61 @@
+@namespace SupportHub.Web.Components.Shared
+@inject ITagService TagService
+
+<div>
+    <MudAutocomplete T="string"
+        Label="Add tag"
+        @bind-Value="_newTag"
+        SearchFunc="SearchTagsAsync"
+        ResetValueOnEmptyText="true"
+        CoerceText="true"
+        Immediate="true"
+        Adornment="Adornment.End"
+        AdornmentIcon="@Icons.Material.Filled.Add"
+        OnAdornmentClick="AddTag"
+        OnKeyUp="HandleKeyUp" />
+    <div class="d-flex flex-wrap gap-1 mt-2">
+        @foreach (var tag in Tags)
+        {
+            <MudChip T="string" OnClose="@(_ => RemoveTag(tag))" CloseIcon="@Icons.Material.Filled.Close" Size="Size.Small">@tag</MudChip>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public List<string> Tags { get; set; } = [];
+    [Parameter] public EventCallback<List<string>> TagsChanged { get; set; }
+    [Parameter] public Guid? CompanyId { get; set; }
+
+    private string? _newTag;
+
+    private async Task<IEnumerable<string>> SearchTagsAsync(string value, CancellationToken ct)
+    {
+        var result = await TagService.GetPopularTagsAsync(CompanyId, 20, ct);
+        if (!result.IsSuccess) return [];
+        return result.Value!
+            .Where(t => string.IsNullOrEmpty(value) || t.Contains(value, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task AddTag()
+    {
+        if (string.IsNullOrWhiteSpace(_newTag)) return;
+        var tag = _newTag.Trim().ToLowerInvariant();
+        if (!Tags.Contains(tag))
+        {
+            Tags.Add(tag);
+            await TagsChanged.InvokeAsync(Tags);
+        }
+        _newTag = null;
+    }
+
+    private async Task HandleKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await AddTag();
+    }
+
+    private async Task RemoveTag(string tag)
+    {
+        Tags.Remove(tag);
+        await TagsChanged.InvokeAsync(Tags);
+    }
+}

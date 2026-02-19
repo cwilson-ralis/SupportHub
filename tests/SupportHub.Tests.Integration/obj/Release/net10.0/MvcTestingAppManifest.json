@@ -1,0 +1,6 @@
+{
+  "SupportHub.Application, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "\/Users\/chris\/Documents\/repos\/SupportHub\/src\/SupportHub.Application",
+  "SupportHub.Domain, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "\/Users\/chris\/Documents\/repos\/SupportHub\/src\/SupportHub.Domain",
+  "SupportHub.Infrastructure, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "\/Users\/chris\/Documents\/repos\/SupportHub\/src\/SupportHub.Infrastructure",
+  "SupportHub.Web, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "\/Users\/chris\/Documents\/repos\/SupportHub\/src\/SupportHub.Web"
+}
