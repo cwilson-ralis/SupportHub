@@ -21,6 +21,8 @@ public class SupportHubDbContext : DbContext
     public DbSet<CannedResponse> CannedResponses => Set<CannedResponse>();
     public DbSet<EmailConfiguration> EmailConfigurations => Set<EmailConfiguration>();
     public DbSet<EmailProcessingLog> EmailProcessingLogs => Set<EmailProcessingLog>();
+    public DbSet<Queue> Queues => Set<Queue>();
+    public DbSet<RoutingRule> RoutingRules => Set<RoutingRule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -466,6 +466,152 @@ namespace SupportHub.Infrastructure.Data.Migrations
                     b.ToTable("InternalNotes", (string)null);
                 });
 
+            modelBuilder.Entity("SupportHub.Domain.Entities.Queue", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("CompanyId", "IsDefault")
+                        .IsUnique()
+                        .HasFilter("IsDefault = 1");
+
+                    b.HasIndex("CompanyId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("Queues", (string)null);
+                });
+
+            modelBuilder.Entity("SupportHub.Domain.Entities.RoutingRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AutoAddTags")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid?>("AutoAssignAgentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AutoSetPriority")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("MatchOperator")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("MatchType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("MatchValue")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("QueueId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AutoAssignAgentId");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("QueueId");
+
+                    b.HasIndex("CompanyId", "SortOrder");
+
+                    b.ToTable("RoutingRules", (string)null);
+                });
+
             modelBuilder.Entity("SupportHub.Domain.Entities.Ticket", b =>
                 {
                     b.Property<Guid>("Id")
@@ -566,6 +712,8 @@ namespace SupportHub.Infrastructure.Data.Migrations
                     b.HasIndex("AssignedAgentId");
 
                     b.HasIndex("CompanyId");
+
+                    b.HasIndex("QueueId");
 
                     b.HasIndex("RequesterEmail");
 
@@ -868,6 +1016,43 @@ namespace SupportHub.Infrastructure.Data.Migrations
                     b.Navigation("Ticket");
                 });
 
+            modelBuilder.Entity("SupportHub.Domain.Entities.Queue", b =>
+                {
+                    b.HasOne("SupportHub.Domain.Entities.Company", "Company")
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Company");
+                });
+
+            modelBuilder.Entity("SupportHub.Domain.Entities.RoutingRule", b =>
+                {
+                    b.HasOne("SupportHub.Domain.Entities.ApplicationUser", "AutoAssignAgent")
+                        .WithMany()
+                        .HasForeignKey("AutoAssignAgentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SupportHub.Domain.Entities.Company", "Company")
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SupportHub.Domain.Entities.Queue", "Queue")
+                        .WithMany("RoutingRules")
+                        .HasForeignKey("QueueId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AutoAssignAgent");
+
+                    b.Navigation("Company");
+
+                    b.Navigation("Queue");
+                });
+
             modelBuilder.Entity("SupportHub.Domain.Entities.Ticket", b =>
                 {
                     b.HasOne("SupportHub.Domain.Entities.ApplicationUser", "AssignedAgent")
@@ -881,9 +1066,16 @@ namespace SupportHub.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("SupportHub.Domain.Entities.Queue", "Queue")
+                        .WithMany("Tickets")
+                        .HasForeignKey("QueueId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("AssignedAgent");
 
                     b.Navigation("Company");
+
+                    b.Navigation("Queue");
                 });
 
             modelBuilder.Entity("SupportHub.Domain.Entities.TicketAttachment", b =>
@@ -955,6 +1147,13 @@ namespace SupportHub.Infrastructure.Data.Migrations
                     b.Navigation("Divisions");
 
                     b.Navigation("UserCompanyRoles");
+                });
+
+            modelBuilder.Entity("SupportHub.Domain.Entities.Queue", b =>
+                {
+                    b.Navigation("RoutingRules");
+
+                    b.Navigation("Tickets");
                 });
 
             modelBuilder.Entity("SupportHub.Domain.Entities.Ticket", b =>

@@ -37,6 +37,7 @@ public class Ticket : BaseEntity
 
     // Navigation properties
     public Company Company { get; set; } = null!;
+    public Queue? Queue { get; set; } = null;
     public ApplicationUser? AssignedAgent { get; set; }
     public ICollection<TicketMessage> Messages { get; set; } = new List<TicketMessage>();
     public ICollection<TicketAttachment> Attachments { get; set; } = new List<TicketAttachment>();

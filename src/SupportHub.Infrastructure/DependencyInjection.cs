@@ -47,6 +47,11 @@ public static class DependencyInjection
         services.AddScoped<IEmailConfigurationService, EmailConfigurationService>();
         services.AddTransient<EmailPollingJob>();
 
+        // Phase 4 — Routing & Queue Management services
+        services.AddScoped<IQueueService, QueueService>();
+        services.AddScoped<IRoutingRuleService, RoutingRuleService>();
+        services.AddScoped<IRoutingEngine, RoutingEngine>();
+
         return services;
     }
 }

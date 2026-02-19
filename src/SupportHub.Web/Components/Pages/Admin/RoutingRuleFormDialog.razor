@@ -1,0 +1,194 @@
+@using SupportHub.Application.DTOs
+@using SupportHub.Application.Interfaces
+@using SupportHub.Domain.Enums
+@inject IRoutingRuleService RoutingRuleService
+
+<MudDialog>
+    <DialogContent>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-2">@_error</MudAlert>
+        }
+        <MudForm @ref="_form" @bind-IsValid="_isValid">
+            <MudTextField Label="Name" @bind-Value="_name" Required="true"
+                          RequiredError="Name is required." Class="mb-3" />
+            <MudTextField Label="Description" @bind-Value="_description" Lines="2"
+                          Class="mb-3" />
+            <MudGrid>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="RuleMatchType" Label="Match Type" @bind-Value="_matchType" Required="true" Class="mb-3">
+                        @foreach (var mt in Enum.GetValues<RuleMatchType>())
+                        {
+                            <MudSelectItem Value="@mt">@mt.ToString()</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="RuleMatchOperator" Label="Match Operator" @bind-Value="_matchOperator" Required="true" Class="mb-3">
+                        @foreach (var mo in Enum.GetValues<RuleMatchOperator>())
+                        {
+                            <MudSelectItem Value="@mo">@mo.ToString()</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+            <MudTextField Label="@MatchValueLabel" @bind-Value="_matchValue" Required="true"
+                          RequiredError="Match value is required."
+                          HelperText="@MatchValueHint"
+                          Class="mb-3" />
+            <MudSelect T="Guid" Label="Destination Queue" @bind-Value="_queueId" Required="true" Class="mb-3">
+                @foreach (var q in AvailableQueues)
+                {
+                    <MudSelectItem Value="@q.Id">@q.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudSelect T="TicketPriority?" Label="Auto-Set Priority (optional)" @bind-Value="_autoSetPriority"
+                       Clearable="true" Class="mb-3">
+                @foreach (var p in Enum.GetValues<TicketPriority>())
+                {
+                    <MudSelectItem Value="@((TicketPriority?)p)">@p.ToString()</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField Label="Auto-Add Tags (comma-separated, optional)" @bind-Value="_autoAddTags"
+                          HelperText="E.g. billing,urgent,vip" Class="mb-3" />
+            @if (IsEditing)
+            {
+                <MudSwitch T="bool" @bind-Value="_isActive" Label="Active" Color="Color.Success" />
+            }
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel" Disabled="_submitting">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="SubmitAsync" Disabled="_submitting">
+            @if (_submitting)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            @(IsEditing ? "Save" : "Create")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public RoutingRuleDto? Rule { get; set; }
+    [Parameter] public Guid CompanyId { get; set; }
+    [Parameter] public List<QueueDto> AvailableQueues { get; set; } = [];
+
+    private MudForm? _form;
+    private bool _isValid;
+    private bool _submitting;
+    private string? _error;
+
+    private string _name = string.Empty;
+    private string? _description;
+    private RuleMatchType _matchType = RuleMatchType.SenderDomain;
+    private RuleMatchOperator _matchOperator = RuleMatchOperator.Equals;
+    private string _matchValue = string.Empty;
+    private Guid _queueId;
+    private TicketPriority? _autoSetPriority;
+    private string? _autoAddTags;
+    private bool _isActive = true;
+
+    private bool IsEditing => Rule is not null;
+
+    private string MatchValueLabel => _matchType switch
+    {
+        RuleMatchType.SenderDomain => "Sender Domain",
+        RuleMatchType.SubjectKeyword => "Subject Keyword",
+        RuleMatchType.BodyKeyword => "Body Keyword",
+        RuleMatchType.IssueType => "Issue Type",
+        RuleMatchType.System => "System Name",
+        RuleMatchType.Tag => "Tag Value",
+        RuleMatchType.CompanyCode => "Company Code",
+        RuleMatchType.RequesterEmail => "Requester Email",
+        _ => "Match Value"
+    };
+
+    private string MatchValueHint => _matchOperator == RuleMatchOperator.In
+        ? "Comma-separated list of values"
+        : _matchOperator == RuleMatchOperator.Regex
+            ? "Regular expression pattern"
+            : "Value to match against";
+
+    protected override void OnParametersSet()
+    {
+        if (Rule is not null)
+        {
+            _name = Rule.Name;
+            _description = Rule.Description;
+            _matchValue = Rule.MatchValue;
+            _isActive = Rule.IsActive;
+            _autoAddTags = Rule.AutoAddTags;
+            _queueId = Rule.QueueId;
+
+            if (Enum.TryParse<RuleMatchType>(Rule.MatchType, out var mt))
+                _matchType = mt;
+            if (Enum.TryParse<RuleMatchOperator>(Rule.MatchOperator, out var mo))
+                _matchOperator = mo;
+            if (!string.IsNullOrEmpty(Rule.AutoSetPriority) && Enum.TryParse<TicketPriority>(Rule.AutoSetPriority, out var p))
+                _autoSetPriority = p;
+        }
+        else if (AvailableQueues.Count > 0)
+        {
+            _queueId = AvailableQueues[0].Id;
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        await _form!.Validate();
+        if (!_isValid) return;
+
+        _submitting = true;
+        _error = null;
+
+        try
+        {
+            if (IsEditing)
+            {
+                var request = new UpdateRoutingRuleRequest(
+                    _queueId,
+                    _name.Trim(),
+                    _description?.Trim(),
+                    _matchType,
+                    _matchOperator,
+                    _matchValue.Trim(),
+                    _isActive,
+                    null,
+                    _autoSetPriority,
+                    _autoAddTags?.Trim());
+                var result = await RoutingRuleService.UpdateRuleAsync(Rule!.Id, request);
+                if (result.IsSuccess)
+                    MudDialog.Close(DialogResult.Ok(result.Value));
+                else
+                    _error = result.Error;
+            }
+            else
+            {
+                var request = new CreateRoutingRuleRequest(
+                    CompanyId,
+                    _queueId,
+                    _name.Trim(),
+                    _description?.Trim(),
+                    _matchType,
+                    _matchOperator,
+                    _matchValue.Trim(),
+                    null,
+                    _autoSetPriority,
+                    _autoAddTags?.Trim());
+                var result = await RoutingRuleService.CreateRuleAsync(request);
+                if (result.IsSuccess)
+                    MudDialog.Close(DialogResult.Ok(result.Value));
+                else
+                    _error = result.Error;
+            }
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

@@ -20,6 +20,7 @@ public class EmailProcessingServiceTests : IDisposable
     private readonly ITicketMessageService _ticketMessageService;
     private readonly IAttachmentService _attachmentService;
     private readonly IAiClassificationService _aiClassificationService;
+    private readonly IRoutingEngine _routingEngine;
     private readonly ILogger<EmailProcessingService> _logger;
     private readonly EmailProcessingService _sut;
 
@@ -33,11 +34,23 @@ public class EmailProcessingServiceTests : IDisposable
         _ticketMessageService = Substitute.For<ITicketMessageService>();
         _attachmentService = Substitute.For<IAttachmentService>();
         _aiClassificationService = Substitute.For<IAiClassificationService>();
+        _routingEngine = Substitute.For<IRoutingEngine>();
         _logger = Substitute.For<ILogger<EmailProcessingService>>();
+
+        _routingEngine.EvaluateAsync(Arg.Any<RoutingContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(Result<RoutingResult>.Success(new RoutingResult(
+                QueueId: null,
+                QueueName: null,
+                AutoAssignAgentId: null,
+                AutoSetPriority: null,
+                AutoAddTags: [],
+                MatchedRuleId: null,
+                MatchedRuleName: null,
+                IsDefaultFallback: false))));
 
         _sut = new EmailProcessingService(
             _context, _ticketService, _ticketMessageService,
-            _attachmentService, _aiClassificationService, _logger);
+            _attachmentService, _aiClassificationService, _routingEngine, _logger);
 
         _company = new Company { Name = "Test Co", Code = "TC" };
         _context.Companies.Add(_company);

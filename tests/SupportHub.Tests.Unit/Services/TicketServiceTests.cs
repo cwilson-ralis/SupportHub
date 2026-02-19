@@ -2,7 +2,9 @@ namespace SupportHub.Tests.Unit.Services;
 
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
+using SupportHub.Application.Common;
 using SupportHub.Application.DTOs;
 using SupportHub.Application.Interfaces;
 using SupportHub.Domain.Entities;
@@ -10,13 +12,13 @@ using SupportHub.Domain.Enums;
 using SupportHub.Infrastructure.Data;
 using SupportHub.Infrastructure.Services;
 using SupportHub.Tests.Unit.Helpers;
-using Microsoft.Extensions.Logging;
 
 public class TicketServiceTests : IDisposable
 {
     private readonly SupportHubDbContext _context;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditService _auditService;
+    private readonly IRoutingEngine _routingEngine;
     private readonly ILogger<TicketService> _logger;
     private readonly TicketService _sut;
 
@@ -25,8 +27,20 @@ public class TicketServiceTests : IDisposable
         _context = TestDbContextFactory.Create();
         _currentUserService = Substitute.For<ICurrentUserService>();
         _auditService = Substitute.For<IAuditService>();
+        _routingEngine = Substitute.For<IRoutingEngine>();
         _logger = Substitute.For<ILogger<TicketService>>();
-        _sut = new TicketService(_context, _currentUserService, _auditService, _logger);
+        _sut = new TicketService(_context, _currentUserService, _auditService, _routingEngine, _logger);
+
+        _routingEngine.EvaluateAsync(Arg.Any<RoutingContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(Result<RoutingResult>.Success(new RoutingResult(
+                QueueId: null,
+                QueueName: null,
+                AutoAssignAgentId: null,
+                AutoSetPriority: null,
+                AutoAddTags: [],
+                MatchedRuleId: null,
+                MatchedRuleName: null,
+                IsDefaultFallback: false))));
 
         _currentUserService.HasAccessToCompanyAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(true);

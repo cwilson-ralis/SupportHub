@@ -17,6 +17,7 @@ public partial class EmailProcessingService(
     ITicketMessageService _ticketMessageService,
     IAttachmentService _attachmentService,
     IAiClassificationService _aiClassificationService,
+    IRoutingEngine _routingEngine,
     ILogger<EmailProcessingService> _logger) : IEmailProcessingService
 {
     [GeneratedRegex(@"TKT-\d{8}-\d{4}", RegexOptions.Compiled)]
@@ -131,6 +132,39 @@ public partial class EmailProcessingService(
                     }
                 }
 
+                // Apply routing for email-created tickets
+                var senderDomain = ExtractDomain(message.SenderEmail);
+                var routingContext = new RoutingContext(
+                    CompanyId: config.CompanyId,
+                    SenderDomain: senderDomain,
+                    Subject: message.Subject,
+                    Body: message.Body ?? string.Empty,
+                    IssueType: null,
+                    System: null,
+                    RequesterEmail: message.SenderEmail,
+                    Tags: []);
+                var routingResult = await _routingEngine.EvaluateAsync(routingContext, ct);
+                if (routingResult.IsSuccess && routingResult.Value is not null)
+                {
+                    var routing = routingResult.Value;
+                    var emailTicket = await _context.Tickets.FindAsync([ticketId.Value], ct);
+                    if (emailTicket is not null)
+                    {
+                        if (routing.QueueId.HasValue)
+                            emailTicket.QueueId = routing.QueueId.Value;
+                        if (routing.AutoAssignAgentId.HasValue && !emailTicket.AssignedAgentId.HasValue)
+                            emailTicket.AssignedAgentId = routing.AutoAssignAgentId.Value;
+                        if (routing.AutoSetPriority.HasValue)
+                            emailTicket.Priority = routing.AutoSetPriority.Value;
+                        if (routing.AutoAddTags.Count > 0)
+                        {
+                            foreach (var tag in routing.AutoAddTags)
+                                _context.TicketTags.Add(new TicketTag { TicketId = emailTicket.Id, Tag = tag.ToLowerInvariant() });
+                        }
+                        await _context.SaveChangesAsync(ct);
+                    }
+                }
+
                 // Save attachments
                 foreach (var attachment in message.Attachments)
                     await _attachmentService.UploadAttachmentAsync(
@@ -182,4 +216,7 @@ public partial class EmailProcessingService(
         _logger.LogInformation("Email {MessageId} processing result: {Result}", message.ExternalMessageId, processingResult);
         return Result<Guid?>.Success(ticketId);
     }
+
+    private static string? ExtractDomain(string email) =>
+        email.Contains('@') ? email.Split('@').Last().Trim() : null;
 }

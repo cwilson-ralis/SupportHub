@@ -13,6 +13,7 @@ public class TicketService(
     SupportHubDbContext _context,
     ICurrentUserService _currentUserService,
     IAuditService _auditService,
+    IRoutingEngine _routingEngine,
     ILogger<TicketService> _logger) : ITicketService
 {
     private static readonly Dictionary<TicketStatus, HashSet<TicketStatus>> ValidTransitions = new()
@@ -75,6 +76,39 @@ public class TicketService(
         }
 
         await _context.SaveChangesAsync(ct);
+
+        // Apply routing
+        var routingContext = new RoutingContext(
+            CompanyId: request.CompanyId,
+            SenderDomain: null,
+            Subject: ticket.Subject,
+            Body: ticket.Description,
+            IssueType: ticket.IssueType,
+            System: ticket.System,
+            RequesterEmail: ticket.RequesterEmail,
+            Tags: request.Tags?.ToList() ?? []);
+        var routingResult = await _routingEngine.EvaluateAsync(routingContext, ct);
+        if (routingResult.IsSuccess && routingResult.Value is not null)
+        {
+            var routing = routingResult.Value;
+            if (routing.QueueId.HasValue)
+                ticket.QueueId = routing.QueueId.Value;
+            if (routing.AutoAssignAgentId.HasValue && !ticket.AssignedAgentId.HasValue)
+                ticket.AssignedAgentId = routing.AutoAssignAgentId.Value;
+            if (routing.AutoSetPriority.HasValue)
+                ticket.Priority = routing.AutoSetPriority.Value;
+            if (routing.AutoAddTags.Count > 0)
+            {
+                foreach (var tag in routing.AutoAddTags)
+                {
+                    _context.TicketTags.Add(new TicketTag { TicketId = ticket.Id, Tag = tag.ToLowerInvariant() });
+                }
+            }
+            if (routing.QueueId.HasValue || routing.AutoAssignAgentId.HasValue || routing.AutoSetPriority.HasValue || routing.AutoAddTags.Count > 0)
+            {
+                await _context.SaveChangesAsync(ct);
+            }
+        }
 
         await _auditService.LogAsync("Created", "Ticket", ticket.Id.ToString(),
             newValues: new { ticket.TicketNumber, ticket.Subject, ticket.CompanyId }, ct: ct);

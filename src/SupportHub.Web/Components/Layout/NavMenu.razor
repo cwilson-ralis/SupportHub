@@ -29,4 +29,16 @@
             </MudNavGroup>
         </Authorized>
     </AuthorizeView>
+    <AuthorizeView Policy="Admin">
+        <Authorized>
+            <MudNavGroup Title="Routing" Icon="@Icons.Material.Filled.AltRoute" Expanded="true">
+                <MudNavLink Href="/admin/queues" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.AccountTree">
+                    Queues
+                </MudNavLink>
+                <MudNavLink Href="/admin/routing-rules" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.AltRoute">
+                    Routing Rules
+                </MudNavLink>
+            </MudNavGroup>
+        </Authorized>
+    </AuthorizeView>
 </MudNavMenu>

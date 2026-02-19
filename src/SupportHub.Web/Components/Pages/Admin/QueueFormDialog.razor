@@ -1,0 +1,108 @@
+@using SupportHub.Application.DTOs
+@using SupportHub.Application.Interfaces
+@inject IQueueService QueueService
+
+<MudDialog>
+    <DialogContent>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-2">@_error</MudAlert>
+        }
+        <MudForm @ref="_form" @bind-IsValid="_isValid">
+            @if (Companies.Count > 1 && !IsEditing)
+            {
+                <MudSelect T="Guid" Label="Company" @bind-Value="_companyId" Required="true" Class="mb-3">
+                    @foreach (var c in Companies)
+                    {
+                        <MudSelectItem Value="@c.Id">@c.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+            <MudTextField Label="Name" @bind-Value="_name" Required="true"
+                          RequiredError="Name is required." Class="mb-3" />
+            <MudTextField Label="Description" @bind-Value="_description" Lines="3"
+                          Class="mb-3" />
+            <MudSwitch T="bool" @bind-Value="_isDefault" Label="Default Queue" Color="Color.Primary" />
+            @if (IsEditing)
+            {
+                <MudSwitch T="bool" @bind-Value="_isActive" Label="Active" Color="Color.Success" Class="mt-2" />
+            }
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel" Disabled="_submitting">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="SubmitAsync" Disabled="_submitting">
+            @if (_submitting)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            @(IsEditing ? "Save" : "Create")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public QueueDto? Queue { get; set; }
+    [Parameter] public Guid CompanyId { get; set; }
+    [Parameter] public List<CompanyDto> Companies { get; set; } = [];
+
+    private MudForm? _form;
+    private bool _isValid;
+    private bool _submitting;
+    private string? _error;
+
+    private Guid _companyId;
+    private string _name = string.Empty;
+    private string? _description;
+    private bool _isDefault;
+    private bool _isActive = true;
+
+    private bool IsEditing => Queue is not null;
+
+    protected override void OnParametersSet()
+    {
+        _companyId = Queue?.CompanyId ?? CompanyId;
+        _name = Queue?.Name ?? string.Empty;
+        _description = Queue?.Description;
+        _isDefault = Queue?.IsDefault ?? false;
+        _isActive = Queue?.IsActive ?? true;
+    }
+
+    private async Task SubmitAsync()
+    {
+        await _form!.Validate();
+        if (!_isValid) return;
+
+        _submitting = true;
+        _error = null;
+
+        try
+        {
+            if (IsEditing)
+            {
+                var request = new UpdateQueueRequest(_name.Trim(), _description?.Trim(), _isDefault, _isActive);
+                var result = await QueueService.UpdateQueueAsync(Queue!.Id, request);
+                if (result.IsSuccess)
+                    MudDialog.Close(DialogResult.Ok(result.Value));
+                else
+                    _error = result.Error;
+            }
+            else
+            {
+                var request = new CreateQueueRequest(_companyId, _name.Trim(), _description?.Trim(), _isDefault);
+                var result = await QueueService.CreateQueueAsync(request);
+                if (result.IsSuccess)
+                    MudDialog.Close(DialogResult.Ok(result.Value));
+                else
+                    _error = result.Error;
+            }
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

@@ -1,0 +1,100 @@
+@page "/admin/routing-rules"
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = "Admin")]
+@using SupportHub.Application.DTOs
+@using SupportHub.Application.Interfaces
+
+<PageTitle>Routing Rules</PageTitle>
+
+<div class="d-flex justify-space-between align-center mb-4">
+    <MudText Typo="Typo.h5">Routing Rules</MudText>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+               OnClick="OpenCreateDialogAsync" Disabled="!_selectedCompanyId.HasValue">
+        Add Rule
+    </MudButton>
+</div>
+
+@if (_companies.Count > 1)
+{
+    <MudPaper Class="pa-3 mb-4">
+        <MudSelect T="Guid" Label="Company" Value="_selectedCompanyId ?? Guid.Empty"
+                   ValueChanged="OnCompanyChanged">
+            @foreach (var company in _companies)
+            {
+                <MudSelectItem Value="@company.Id">@company.Name</MudSelectItem>
+            }
+        </MudSelect>
+    </MudPaper>
+}
+
+@if (_error is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
+}
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else if (_rules.Count == 0)
+{
+    <MudText Class="pa-4" Color="Color.Secondary">No routing rules configured. Click "Add Rule" to get started.</MudText>
+}
+else
+{
+    <MudTable Items="@_rules" Hover="true" Dense="true" Striped="true">
+        <HeaderContent>
+            <MudTh>Order</MudTh>
+            <MudTh>Name</MudTh>
+            <MudTh>Match Type</MudTh>
+            <MudTh>Operator</MudTh>
+            <MudTh>Value</MudTh>
+            <MudTh>Destination Queue</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh>Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Order">@context.SortOrder</MudTd>
+            <MudTd DataLabel="Name">
+                <MudText Typo="Typo.body2" Style="font-weight: 600;">@context.Name</MudText>
+                @if (!string.IsNullOrEmpty(context.Description))
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@context.Description</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Match Type">
+                <MudChip T="string" Size="Size.Small" Color="Color.Info">@context.MatchType</MudChip>
+            </MudTd>
+            <MudTd DataLabel="Operator">@context.MatchOperator</MudTd>
+            <MudTd DataLabel="Value">
+                <MudText Typo="Typo.body2" Style="font-family: monospace;">@context.MatchValue</MudText>
+            </MudTd>
+            <MudTd DataLabel="Destination Queue">@context.QueueName</MudTd>
+            <MudTd DataLabel="Status">
+                <MudChip T="string" Size="Size.Small" Color="@(context.IsActive ? Color.Success : Color.Default)">
+                    @(context.IsActive ? "Active" : "Inactive")
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Actions">
+                <MudTooltip Text="Move Up">
+                    <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowUp" Size="Size.Small"
+                                   OnClick="@(() => MoveUpAsync(context))"
+                                   Disabled="@(_rules.IndexOf(context) == 0)" />
+                </MudTooltip>
+                <MudTooltip Text="Move Down">
+                    <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowDown" Size="Size.Small"
+                                   OnClick="@(() => MoveDownAsync(context))"
+                                   Disabled="@(_rules.IndexOf(context) == _rules.Count - 1)" />
+                </MudTooltip>
+                <MudTooltip Text="Edit">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                   OnClick="@(() => OpenEditDialogAsync(context))" />
+                </MudTooltip>
+                <MudTooltip Text="Delete">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                   OnClick="@(() => DeleteRuleAsync(context))" />
+                </MudTooltip>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
