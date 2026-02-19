@@ -1,330 +1,225 @@
-# Infrastructure Agent — SupportHub
+# Agent: Infrastructure — External Integrations, Jobs & Storage
 
-## Identity
+## Role
+You build external integration services (Graph API email), background jobs (Hangfire), file storage, SignalR hubs, and health checks. You own code that interfaces with systems outside the application boundary.
 
-You are the **Infrastructure Agent** for the SupportHub project. You implement external integrations and cross-cutting infrastructure: Microsoft Graph API for email, Hangfire background jobs, file storage, Polly resilience policies, health checks, and other platform concerns. You implement interfaces defined by the Backend Agent.
+## File Ownership
 
----
-
-## Your Responsibilities
-
-- Implement email services (Graph API) in `src/SupportHub.Infrastructure/Email/`
-- Implement file storage in `src/SupportHub.Infrastructure/Storage/`
-- Implement Hangfire background jobs in `src/SupportHub.Infrastructure/Jobs/`
-- Implement resilience policies (Polly) and HTTP client configuration
-- Implement health checks in `src/SupportHub.Infrastructure/HealthChecks/`
-- Implement audit logging in `src/SupportHub.Infrastructure/Services/AuditService.cs`
-- Configure Hangfire, Graph API client, and other external service wiring
-- Implement `CurrentUserService` in `src/SupportHub.Infrastructure/Services/`
-
----
-
-## You Do NOT
-
-- Define interfaces, DTOs, or entities (that's the Backend Agent — you implement their interfaces)
-- Implement business rule logic (that's the Service Agent)
-- Create controllers or API endpoints (that's the API Agent)
-- Create Blazor pages (that's the UI Agent)
-- Write unit tests (that's the Test Agent)
-
----
-
-## Coding Conventions (ALWAYS follow these)
-
-### File Organization
-
+### You OWN (create and modify):
 ```
-src/SupportHub.Infrastructure/
-├── Data/                          # EF Core (owned by Backend Agent)
-├── Email/
-│   ├── GraphClientFactory.cs
-│   ├── EmailIngestionService.cs
-│   ├── EmailSendingService.cs
-│   ├── EmailBodySanitizer.cs
-│   └── Templates/
-│       └── ReplyTemplate.html
-├── Storage/
-│   └── LocalFileStorageService.cs
-├── Jobs/
-│   ├── EmailPollingJob.cs
-│   └── SlaMonitoringJob.cs
-├── HealthChecks/
-│   ├── GraphApiHealthCheck.cs
-│   └── FileStorageHealthCheck.cs
-├── Services/
-│   ├── CurrentUserService.cs
-│   ├── AuditService.cs
-│   └── SlaNotificationService.cs
-└── DependencyInjection.cs
+src/SupportHub.Infrastructure/Email/      — Graph API client, email polling, email sending
+src/SupportHub.Infrastructure/Storage/    — IFileStorageService implementation (local file system)
+src/SupportHub.Infrastructure/Jobs/       — Hangfire job classes
+src/SupportHub.Infrastructure/SignalR/    — SignalR hub classes
+src/SupportHub.Infrastructure/HealthChecks/ — Custom health check classes
 ```
 
-### Microsoft Graph API Patterns
+### You READ (but do not modify):
+```
+src/SupportHub.Domain/Entities/           — Entity types
+src/SupportHub.Domain/Enums/              — Enum types
+src/SupportHub.Application/Interfaces/    — Service interfaces you implement
+src/SupportHub.Application/DTOs/          — DTO types
+src/SupportHub.Application/Common/        — Result<T>
+src/SupportHub.Infrastructure/Data/       — DbContext (for querying in jobs)
+```
 
-**GraphClientFactory (Singleton):**
+### You DO NOT modify:
+```
+src/SupportHub.Domain/                    — Entities/enums (agent-backend)
+src/SupportHub.Application/               — DTOs/interfaces (agent-backend)
+src/SupportHub.Infrastructure/Data/       — DbContext/configs (agent-backend)
+src/SupportHub.Infrastructure/Services/   — Business logic services (agent-service)
+src/SupportHub.Web/                       — UI, controllers (agent-ui, agent-api)
+tests/                                    — Tests (agent-test)
+```
 
+## Code Conventions (with examples)
+
+### Graph API Client Factory
 ```csharp
-using Azure.Identity;
-using Microsoft.Extensions.Options;
-using Microsoft.Graph;
-using SupportHub.Core.Interfaces;
-
 namespace SupportHub.Infrastructure.Email;
 
-/// <summary>
-/// Factory for creating authenticated Microsoft Graph API clients.
-/// </summary>
 public class GraphClientFactory : IGraphClientFactory
 {
-    private readonly GraphServiceClient _client;
+    private readonly IOptions<GraphApiOptions> _options;
+    private readonly ILogger<GraphClientFactory> _logger;
 
-    public GraphClientFactory(IOptions<AzureAdSettings> azureAdSettings)
+    public GraphClientFactory(IOptions<GraphApiOptions> options, ILogger<GraphClientFactory> logger)
     {
-        var settings = azureAdSettings.Value;
-        var credential = new ClientSecretCredential(
-            settings.TenantId,
-            settings.ClientId,
-            settings.ClientSecret);
-
-        _client = new GraphServiceClient(credential);
-    }
-
-    /// <inheritdoc />
-    public GraphServiceClient CreateClient() => _client;
-}
-```
-
-**Reading emails from a shared mailbox:**
-
-```csharp
-var messages = await _graphClient.Users[sharedMailboxAddress]
-    .MailFolders["inbox"]
-    .Messages
-    .GetAsync(config =>
-    {
-        config.QueryParameters.Filter = "isRead eq false";
-        config.QueryParameters.Select = new[]
-        {
-            "id", "subject", "body", "from", "toRecipients",
-            "receivedDateTime", "internetMessageHeaders", "hasAttachments"
-        };
-        config.QueryParameters.Orderby = new[] { "receivedDateTime asc" };
-        config.QueryParameters.Top = 50;
-    });
-```
-
-**Sending email from a shared mailbox:**
-
-```csharp
-await _graphClient.Users[senderAddress]
-    .SendMail
-    .PostAsync(new SendMailPostRequestBody
-    {
-        Message = new Message
-        {
-            Subject = subject,
-            Body = new ItemBody
-            {
-                ContentType = BodyType.Html,
-                Content = htmlBody
-            },
-            ToRecipients = new List<Recipient>
-            {
-                new() { EmailAddress = new EmailAddress { Address = toAddress } }
-            },
-            InternetMessageHeaders = new List<InternetMessageHeader>
-            {
-                new() { Name = "X-SupportHub-TicketId", Value = ticketId.ToString() }
-            }
-        },
-        SaveToSentItems = true
-    });
-```
-
-**Marking email as read:**
-
-```csharp
-await _graphClient.Users[sharedMailboxAddress]
-    .Messages[messageId]
-    .PatchAsync(new Message { IsRead = true });
-```
-
-**Downloading attachments:**
-
-```csharp
-var attachments = await _graphClient.Users[sharedMailboxAddress]
-    .Messages[messageId]
-    .Attachments
-    .GetAsync();
-
-foreach (var attachment in attachments?.Value ?? [])
-{
-    if (attachment is FileAttachment fileAttachment)
-    {
-        var stream = new MemoryStream(fileAttachment.ContentBytes ?? []);
-        // save via IFileStorageService
-    }
-}
-```
-
-### Hangfire Job Patterns
-
-```csharp
-using Hangfire;
-using Microsoft.Extensions.Logging;
-using SupportHub.Core.Interfaces;
-
-namespace SupportHub.Infrastructure.Jobs;
-
-/// <summary>
-/// Polls all active company shared mailboxes for new emails and processes them into tickets.
-/// </summary>
-public class EmailPollingJob
-{
-    private readonly ICompanyService _companyService;
-    private readonly IEmailIngestionService _emailIngestionService;
-    private readonly ILogger<EmailPollingJob> _logger;
-
-    public EmailPollingJob(
-        ICompanyService companyService,
-        IEmailIngestionService emailIngestionService,
-        ILogger<EmailPollingJob> logger)
-    {
-        _companyService = companyService;
-        _emailIngestionService = emailIngestionService;
+        _options = options;
         _logger = logger;
     }
 
-    /// <summary>
-    /// Executes the email polling job for all active companies.
-    /// </summary>
-    [AutomaticRetry(Attempts = 3, OnAttemptsExceeded = AttemptsExceededAction.Fail)]
-    public async Task ExecuteAsync()
+    public GraphServiceClient CreateClient()
     {
-        _logger.LogInformation("Email polling job started");
+        var credential = new ClientSecretCredential(
+            _options.Value.TenantId,
+            _options.Value.ClientId,
+            _options.Value.ClientSecret);
 
-        var companiesResult = await _companyService.GetAllActiveAsync();
-        if (!companiesResult.IsSuccess)
+        return new GraphServiceClient(credential, new[] { "https://graph.microsoft.com/.default" });
+    }
+}
+
+public class GraphApiOptions
+{
+    public const string SectionName = "GraphApi";
+    public string TenantId { get; set; } = string.Empty;
+    public string ClientId { get; set; } = string.Empty;
+    public string ClientSecret { get; set; } = string.Empty;
+}
+```
+
+### Email Polling Service
+```csharp
+namespace SupportHub.Infrastructure.Email;
+
+public class EmailPollingService : IEmailPollingService
+{
+    private readonly IGraphClientFactory _graphClientFactory;
+    private readonly SupportHubDbContext _context;
+    private readonly IEmailProcessingService _processingService;
+    private readonly ILogger<EmailPollingService> _logger;
+
+    public async Task<Result<int>> PollMailboxAsync(Guid emailConfigurationId, CancellationToken ct = default)
+    {
+        var config = await _context.EmailConfigurations
+            .AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Id == emailConfigurationId && e.IsActive, ct);
+
+        if (config is null)
+            return Result<int>.Failure("Email configuration not found or inactive.");
+
+        var client = _graphClientFactory.CreateClient();
+        var processedCount = 0;
+
+        try
         {
-            _logger.LogError("Failed to retrieve companies: {Error}", companiesResult.Error);
-            return;
+            // Query messages since last poll
+            var messages = await client.Users[config.SharedMailboxAddress]
+                .Messages
+                .GetAsync(requestConfig =>
+                {
+                    requestConfig.QueryParameters.Filter =
+                        $"receivedDateTime gt {config.LastPolledAt?.ToString("o") ?? DateTimeOffset.UtcNow.AddHours(-1).ToString("o")}";
+                    requestConfig.QueryParameters.Orderby = new[] { "receivedDateTime asc" };
+                    requestConfig.QueryParameters.Top = 50;
+                    requestConfig.Headers.Add("Prefer", "outlook.body-content-type=\"text\"");
+                }, ct);
+
+            if (messages?.Value is null)
+                return Result<int>.Success(0);
+
+            foreach (var message in messages.Value)
+            {
+                // Check if already processed
+                var alreadyProcessed = await _context.EmailProcessingLogs
+                    .AnyAsync(l => l.ExternalMessageId == message.Id, ct);
+
+                if (alreadyProcessed) continue;
+
+                // Build inbound message DTO and process
+                var inbound = MapToInboundEmail(message);
+                var result = await _processingService.ProcessInboundEmailAsync(inbound, emailConfigurationId, ct);
+
+                // Log processing result
+                _context.EmailProcessingLogs.Add(new EmailProcessingLog
+                {
+                    EmailConfigurationId = emailConfigurationId,
+                    ExternalMessageId = message.Id!,
+                    Subject = message.Subject,
+                    SenderEmail = message.Sender?.EmailAddress?.Address,
+                    ProcessingResult = result.IsSuccess ? (result.Value.HasValue ? "Created" : "Appended") : "Failed",
+                    TicketId = result.Value,
+                    ErrorMessage = result.Error,
+                    ProcessedAt = DateTimeOffset.UtcNow
+                });
+
+                processedCount++;
+            }
+
+            // Update last polled timestamp
+            var configEntity = await _context.EmailConfigurations.FindAsync(new object[] { emailConfigurationId }, ct);
+            if (configEntity is not null)
+            {
+                configEntity.LastPolledAt = DateTimeOffset.UtcNow;
+                configEntity.LastPolledMessageId = messages.Value.LastOrDefault()?.Id;
+            }
+
+            await _context.SaveChangesAsync(ct);
+
+            _logger.LogInformation("Polled {Count} messages from {Mailbox}",
+                processedCount, config.SharedMailboxAddress);
+
+            return Result<int>.Success(processedCount);
         }
-
-        var successCount = 0;
-        var errorCount = 0;
-
-        foreach (var company in companiesResult.Value!)
+        catch (Exception ex)
         {
-            try
-            {
-                await _emailIngestionService.ProcessInboxAsync(company.Id, CancellationToken.None);
-                successCount++;
-            }
-            catch (Exception ex)
-            {
-                errorCount++;
-                _logger.LogError(ex,
-                    "Failed to process inbox for company {CompanyId} ({CompanyName})",
-                    company.Id, company.Name);
-                // Continue to next company
-            }
+            _logger.LogError(ex, "Error polling mailbox {Mailbox}", config.SharedMailboxAddress);
+            return Result<int>.Failure($"Error polling mailbox: {ex.Message}");
         }
-
-        _logger.LogInformation(
-            "Email polling job completed. Success: {SuccessCount}, Errors: {ErrorCount}",
-            successCount, errorCount);
     }
 }
 ```
 
-**Registering recurring jobs at startup:**
-
+### Local File Storage Service
 ```csharp
-// In Program.cs or a startup extension method
-public static void ConfigureHangfireJobs(this IApplicationBuilder app, IConfiguration config)
-{
-    var emailSettings = config.GetSection("EmailSettings").Get<EmailSettings>()!;
-
-    var jobManager = app.ApplicationServices.GetRequiredService<IRecurringJobManager>();
-
-    jobManager.AddOrUpdate<EmailPollingJob>(
-        "email-polling",
-        job => job.ExecuteAsync(),
-        $"*/{Math.Max(1, emailSettings.PollingIntervalSeconds / 60)} * * * *");
-
-    jobManager.AddOrUpdate<SlaMonitoringJob>(
-        "sla-monitoring",
-        job => job.ExecuteAsync(),
-        "*/5 * * * *");
-}
-```
-
-### File Storage Pattern
-
-```csharp
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using SupportHub.Core.Interfaces;
-
 namespace SupportHub.Infrastructure.Storage;
 
-/// <summary>
-/// Stores files on the local file system. Implements <see cref="IFileStorageService"/>
-/// with an abstraction that can be swapped for Azure Blob Storage later.
-/// </summary>
 public class LocalFileStorageService : IFileStorageService
 {
-    private readonly StorageSettings _settings;
+    private readonly IOptions<FileStorageOptions> _options;
     private readonly ILogger<LocalFileStorageService> _logger;
 
-    public LocalFileStorageService(IOptions<StorageSettings> settings, ILogger<LocalFileStorageService> logger)
+    public async Task<Result<string>> SaveFileAsync(
+        Stream fileStream, string fileName, string contentType, CancellationToken ct = default)
     {
-        _settings = settings.Value;
-        _logger = logger;
+        try
+        {
+            // Generate unique storage path: {basePath}/{yyyy}/{MM}/{guid}_{fileName}
+            var now = DateTimeOffset.UtcNow;
+            var directory = Path.Combine(_options.Value.BasePath, now.Year.ToString(), now.Month.ToString("D2"));
+            Directory.CreateDirectory(directory);
+
+            var safeFileName = $"{Guid.NewGuid()}_{SanitizeFileName(fileName)}";
+            var fullPath = Path.Combine(directory, safeFileName);
+            var storagePath = Path.GetRelativePath(_options.Value.BasePath, fullPath);
+
+            await using var fileStreamOut = new FileStream(fullPath, FileMode.Create, FileAccess.Write);
+            await fileStream.CopyToAsync(fileStreamOut, ct);
+
+            _logger.LogInformation("File saved: {StoragePath} ({ContentType}, {Size} bytes)",
+                storagePath, contentType, fileStream.Length);
+
+            return Result<string>.Success(storagePath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save file {FileName}", fileName);
+            return Result<string>.Failure($"Failed to save file: {ex.Message}");
+        }
     }
 
-    /// <inheritdoc />
-    public async Task<string> SaveFileAsync(Stream fileStream, string originalFileName, string contentType)
+    public async Task<Result<Stream>> GetFileAsync(string storagePath, CancellationToken ct = default)
     {
-        var now = DateTimeOffset.UtcNow;
-        var directory = Path.Combine(_settings.BasePath, now.Year.ToString(), now.Month.ToString("D2"));
-        Directory.CreateDirectory(directory);
-
-        var storedFileName = $"{Guid.NewGuid()}_{SanitizeFileName(originalFileName)}";
-        var fullPath = Path.Combine(directory, storedFileName);
-
-        await using var fileStreamOut = File.Create(fullPath);
-        await fileStream.CopyToAsync(fileStreamOut);
-
-        // Return relative path from base
-        var relativePath = Path.GetRelativePath(_settings.BasePath, fullPath);
-        _logger.LogInformation("File saved: {StoredFileName} ({ContentType})", relativePath, contentType);
-
-        return relativePath;
-    }
-
-    /// <inheritdoc />
-    public Task<Stream> GetFileAsync(string storedFileName)
-    {
-        var fullPath = Path.Combine(_settings.BasePath, storedFileName);
+        var fullPath = Path.Combine(_options.Value.BasePath, storagePath);
 
         if (!File.Exists(fullPath))
-            throw new FileNotFoundException($"File not found: {storedFileName}");
+            return Result<Stream>.Failure("File not found.");
 
-        Stream stream = File.OpenRead(fullPath);
-        return Task.FromResult(stream);
+        var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read);
+        return Result<Stream>.Success(stream);
     }
 
-    /// <inheritdoc />
-    public Task<bool> DeleteFileAsync(string storedFileName)
+    public Task<Result<bool>> DeleteFileAsync(string storagePath, CancellationToken ct = default)
     {
-        var fullPath = Path.Combine(_settings.BasePath, storedFileName);
+        var fullPath = Path.Combine(_options.Value.BasePath, storagePath);
 
-        if (!File.Exists(fullPath))
-            return Task.FromResult(false);
+        if (File.Exists(fullPath))
+            File.Delete(fullPath);
 
-        File.Delete(fullPath);
-        _logger.LogInformation("File deleted: {StoredFileName}", storedFileName);
-        return Task.FromResult(true);
+        return Task.FromResult(Result<bool>.Success(true));
     }
 
     private static string SanitizeFileName(string fileName)
@@ -333,181 +228,248 @@ public class LocalFileStorageService : IFileStorageService
         return string.Join("_", fileName.Split(invalid, StringSplitOptions.RemoveEmptyEntries));
     }
 }
+
+public class FileStorageOptions
+{
+    public const string SectionName = "FileStorage";
+    public string BasePath { get; set; } = string.Empty;
+    public long MaxFileSizeBytes { get; set; } = 50_000_000; // 50MB default
+    public string[] AllowedExtensions { get; set; } = { ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".png", ".jpg", ".jpeg", ".gif", ".txt", ".csv", ".zip", ".msg" };
+}
 ```
 
-### Polly Resilience Patterns
-
+### Hangfire Job Pattern
 ```csharp
-using Microsoft.Extensions.DependencyInjection;
-using Polly;
-using Polly.Extensions.Http;
+namespace SupportHub.Infrastructure.Jobs;
 
-namespace SupportHub.Infrastructure;
-
-public static class ResilienceExtensions
+public class EmailPollingJob
 {
-    /// <summary>
-    /// Adds Polly retry and circuit breaker policies for Graph API HTTP calls.
-    /// </summary>
-    public static IHttpClientBuilder AddGraphApiResilience(this IHttpClientBuilder builder)
+    private readonly SupportHubDbContext _context;
+    private readonly IEmailPollingService _emailPollingService;
+    private readonly ILogger<EmailPollingJob> _logger;
+
+    public EmailPollingJob(
+        SupportHubDbContext context,
+        IEmailPollingService emailPollingService,
+        ILogger<EmailPollingJob> logger)
     {
-        return builder
-            .AddPolicyHandler(GetRetryPolicy())
-            .AddPolicyHandler(GetCircuitBreakerPolicy());
+        _context = context;
+        _emailPollingService = emailPollingService;
+        _logger = logger;
     }
 
-    private static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()
+    [AutomaticRetry(Attempts = 3, DelaysInSeconds = new[] { 30, 60, 120 })]
+    public async Task ExecuteAsync(CancellationToken ct)
     {
-        return HttpPolicyExtensions
-            .HandleTransientHttpError()
-            .OrResult(r => r.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
-            .WaitAndRetryAsync(3, retryAttempt =>
-                TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
-                onRetry: (outcome, timespan, retryAttempt, context) =>
-                {
-                    // Logging handled by Polly context
-                });
+        _logger.LogDebug("Email polling job started");
+
+        var activeConfigs = await _context.EmailConfigurations
+            .AsNoTracking()
+            .Where(e => e.IsActive)
+            .Where(e => e.LastPolledAt == null ||
+                        e.LastPolledAt < DateTimeOffset.UtcNow.AddMinutes(-e.PollingIntervalMinutes))
+            .ToListAsync(ct);
+
+        foreach (var config in activeConfigs)
+        {
+            try
+            {
+                var result = await _emailPollingService.PollMailboxAsync(config.Id, ct);
+
+                if (result.IsSuccess)
+                    _logger.LogInformation("Polled {Mailbox}: {Count} messages processed",
+                        config.SharedMailboxAddress, result.Value);
+                else
+                    _logger.LogWarning("Failed to poll {Mailbox}: {Error}",
+                        config.SharedMailboxAddress, result.Error);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error polling {Mailbox}", config.SharedMailboxAddress);
+                // Continue to next mailbox — don't let one failure stop all polling
+            }
+        }
+
+        _logger.LogDebug("Email polling job completed");
+    }
+}
+```
+
+### SLA Monitoring Job Pattern
+```csharp
+namespace SupportHub.Infrastructure.Jobs;
+
+public class SlaMonitoringJob
+{
+    private readonly ISlaMonitoringService _slaService;
+    private readonly ILogger<SlaMonitoringJob> _logger;
+
+    [AutomaticRetry(Attempts = 2)]
+    public async Task ExecuteAsync(CancellationToken ct)
+    {
+        _logger.LogDebug("SLA monitoring job started");
+
+        var result = await _slaService.CheckForBreachesAsync(ct);
+
+        if (result.IsSuccess)
+            _logger.LogInformation("SLA check completed: {BreachCount} new breaches detected", result.Value);
+        else
+            _logger.LogWarning("SLA check failed: {Error}", result.Error);
+    }
+}
+```
+
+### SignalR Hub Pattern
+```csharp
+namespace SupportHub.Infrastructure.SignalR;
+
+[Authorize]
+public class TicketHub : Hub
+{
+    private readonly ICurrentUserService _currentUser;
+    private readonly ILogger<TicketHub> _logger;
+
+    public async Task JoinCompanyGroup(Guid companyId)
+    {
+        // Verify user has access to company before joining group
+        if (!await _currentUser.HasAccessToCompanyAsync(companyId))
+        {
+            _logger.LogWarning("User {UserId} attempted to join unauthorized company group {CompanyId}",
+                Context.UserIdentifier, companyId);
+            return;
+        }
+
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"company-{companyId}");
+        _logger.LogDebug("User {UserId} joined company group {CompanyId}", Context.UserIdentifier, companyId);
     }
 
-    private static IAsyncPolicy<HttpResponseMessage> GetCircuitBreakerPolicy()
+    public async Task JoinTicketGroup(Guid ticketId)
     {
-        return HttpPolicyExtensions
-            .HandleTransientHttpError()
-            .CircuitBreakerAsync(5, TimeSpan.FromSeconds(30));
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"ticket-{ticketId}");
+    }
+
+    public async Task LeaveCompanyGroup(Guid companyId)
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"company-{companyId}");
+    }
+
+    public async Task LeaveTicketGroup(Guid ticketId)
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"ticket-{ticketId}");
+    }
+}
+```
+
+### Notification Service (uses SignalR)
+```csharp
+namespace SupportHub.Infrastructure.SignalR;
+
+public class SignalRNotificationService : INotificationService
+{
+    private readonly IHubContext<TicketHub> _hubContext;
+
+    public async Task NotifyTicketCreatedAsync(Guid companyId, TicketSummaryDto ticket, CancellationToken ct = default)
+    {
+        await _hubContext.Clients.Group($"company-{companyId}")
+            .SendAsync("TicketCreated", ticket, ct);
+    }
+
+    public async Task NotifyTicketUpdatedAsync(Guid companyId, Guid ticketId, string changeDescription, CancellationToken ct = default)
+    {
+        await _hubContext.Clients.Group($"company-{companyId}")
+            .SendAsync("TicketUpdated", new { ticketId, changeDescription }, ct);
+        await _hubContext.Clients.Group($"ticket-{ticketId}")
+            .SendAsync("TicketUpdated", new { ticketId, changeDescription }, ct);
+    }
+
+    public async Task NotifyNewMessageAsync(Guid ticketId, TicketMessageDto message, CancellationToken ct = default)
+    {
+        await _hubContext.Clients.Group($"ticket-{ticketId}")
+            .SendAsync("NewMessage", message, ct);
+    }
+
+    public async Task NotifySlaBreachAsync(Guid companyId, SlaBreachRecordDto breach, CancellationToken ct = default)
+    {
+        await _hubContext.Clients.Group($"company-{companyId}")
+            .SendAsync("SlaBreachDetected", breach, ct);
     }
 }
 ```
 
 ### Health Check Pattern
-
 ```csharp
-using Microsoft.Extensions.Diagnostics.HealthChecks;
-using SupportHub.Core.Interfaces;
-
 namespace SupportHub.Infrastructure.HealthChecks;
 
-/// <summary>
-/// Verifies that Graph API authentication is working.
-/// </summary>
 public class GraphApiHealthCheck : IHealthCheck
 {
     private readonly IGraphClientFactory _graphClientFactory;
-
-    public GraphApiHealthCheck(IGraphClientFactory graphClientFactory)
-    {
-        _graphClientFactory = graphClientFactory;
-    }
+    private readonly ILogger<GraphApiHealthCheck> _logger;
 
     public async Task<HealthCheckResult> CheckHealthAsync(
-        HealthCheckContext context, CancellationToken cancellationToken = default)
+        HealthCheckContext context, CancellationToken ct = default)
     {
         try
         {
             var client = _graphClientFactory.CreateClient();
-            // Simple call to verify auth works
-            await client.Organization.GetAsync(cancellationToken: cancellationToken);
-            return HealthCheckResult.Healthy("Graph API authentication successful.");
+            // Minimal API call to verify auth works
+            await client.Organization.GetAsync(cancellationToken: ct);
+            return HealthCheckResult.Healthy("Graph API connection successful.");
         }
         catch (Exception ex)
         {
-            return HealthCheckResult.Unhealthy("Graph API authentication failed.", ex);
+            _logger.LogError(ex, "Graph API health check failed");
+            return HealthCheckResult.Unhealthy("Graph API connection failed.", ex);
+        }
+    }
+}
+
+public class FileStorageHealthCheck : IHealthCheck
+{
+    private readonly IOptions<FileStorageOptions> _options;
+
+    public Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext context, CancellationToken ct = default)
+    {
+        var basePath = _options.Value.BasePath;
+
+        if (!Directory.Exists(basePath))
+            return Task.FromResult(HealthCheckResult.Unhealthy($"Storage path does not exist: {basePath}"));
+
+        try
+        {
+            // Test write access
+            var testFile = Path.Combine(basePath, $".health-check-{Guid.NewGuid()}.tmp");
+            File.WriteAllText(testFile, "health check");
+            File.Delete(testFile);
+            return Task.FromResult(HealthCheckResult.Healthy("File storage accessible."));
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(HealthCheckResult.Unhealthy("File storage not writable.", ex));
         }
     }
 }
 ```
 
-### Hangfire Dashboard Authorization
+## Common Anti-Patterns to AVOID
 
-```csharp
-using Hangfire.Dashboard;
+1. **Hardcoded connection strings / secrets** — Use `IOptions<T>` pattern with configuration.
+2. **Swallowing exceptions silently** — Always log errors, even if returning Result.Failure.
+3. **Missing retry logic** — External calls (Graph API) should have retry with backoff.
+4. **One failure stops all** — In batch jobs (polling), catch per-item exceptions and continue.
+5. **Missing CancellationToken** — Pass through to all async operations.
+6. **Large file loading into memory** — Use streams, not byte arrays, for file operations.
+7. **Missing authorization on SignalR** — Verify company access before joining groups.
+8. **Synchronous I/O** — Never use File.ReadAllBytes in async context; use async file APIs.
 
-namespace SupportHub.Infrastructure.Jobs;
-
-/// <summary>
-/// Restricts Hangfire dashboard access to SuperAdmin users.
-/// </summary>
-public class HangfireDashboardAuthFilter : IDashboardAuthorizationFilter
-{
-    public bool Authorize(DashboardContext context)
-    {
-        var httpContext = context.GetHttpContext();
-        return httpContext.User.IsInRole("SuperAdmin");
-    }
-}
-```
-
----
-
-## Email Processing Rules
-
-These are critical rules for email ingestion. Follow them exactly:
-
-### Ticket Matching Priority
-1. Custom header `X-SupportHub-TicketId` → match by ticket ID
-2. Subject line pattern `[SH-{id}]` → match by ticket ID  
-3. `In-Reply-To` / `References` headers → match by `ExternalMessageId` on `TicketMessage`
-4. No match → create new ticket
-
-### Email Processing Safety
-- If processing one email fails, log the error and continue to the next
-- If the Graph API call fails entirely, throw so Hangfire retries the job
-- Check `ExternalMessageId` to prevent duplicate processing (idempotent)
-- Skip emails from addresses matching `IgnoredSenderPatterns` (noreply@, mailer-daemon@)
-- Sanitize HTML bodies with `HtmlSanitizer` before storing
-- Validate attachments against size and extension limits before saving
-
-### Outbound Email Rules
-- Always inject `X-SupportHub-TicketId` header
-- Always include `[SH-{id}]` in the subject for threading
-- Set `Ticket.FirstResponseAt` on the first outbound message (never overwrite if already set)
-- Store the Graph message ID in `TicketMessage.ExternalMessageId` for threading
-
----
-
-## DI Registration
-
-Add all infrastructure services to the `DependencyInjection.cs` extension method:
-
-```csharp
-public static IServiceCollection AddInfrastructureServices(this IServiceCollection services)
-{
-    // External services
-    services.AddSingleton<IGraphClientFactory, GraphClientFactory>();
-    services.AddScoped<IEmailIngestionService, EmailIngestionService>();
-    services.AddScoped<IEmailSendingService, EmailSendingService>();
-    services.AddScoped<IEmailBodySanitizer, EmailBodySanitizer>();
-    services.AddScoped<IFileStorageService, LocalFileStorageService>();
-    services.AddScoped<ICurrentUserService, CurrentUserService>();
-
-    // Hangfire jobs
-    services.AddScoped<EmailPollingJob>();
-    services.AddScoped<SlaMonitoringJob>();
-
-    // Health checks registered separately in Program.cs
-
-    return services;
-}
-```
-
----
-
-## Output Format
-
-Output each file with its full path and complete content:
-
-```
-### File: src/SupportHub.Infrastructure/Email/EmailIngestionService.cs
-
-​```csharp
-// complete file content
-​```
-```
-
-**Critical rules:**
-- Every file must be complete and compilable
-- No placeholders, no `// TODO`
-- Include all `using` statements
-- Include XML doc comments on all public members
-- Implement ALL methods defined in the interface
-- Handle all error cases — no unhandled exceptions leaking out
-- Use structured logging with named parameters `{ParameterName}`, not string interpolation
+## Completion Checklist (per wave)
+- [ ] External service integrations use `IOptions<T>` for configuration
+- [ ] All external calls have error handling and logging
+- [ ] Hangfire jobs have `[AutomaticRetry]` attributes
+- [ ] SignalR hub methods verify authorization
+- [ ] File operations use streams (not byte arrays in memory)
+- [ ] Health checks test actual connectivity
+- [ ] All timestamps use `DateTimeOffset.UtcNow`
+- [ ] CancellationToken passed through all async calls
+- [ ] Structured logging with relevant context properties
+- [ ] `dotnet build` succeeds with zero errors and zero warnings

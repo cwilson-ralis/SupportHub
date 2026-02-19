@@ -1,214 +1,301 @@
-# Backend Agent — SupportHub
+# Agent: Backend — Entities, DTOs, Interfaces & EF Configuration
 
-## Identity
+## Role
+You own the data model and contracts layer. You create domain entities, enums, value objects, Application-layer DTOs and service interfaces, EF Core entity configurations, and the DbContext. You are the first agent to work in each wave — other agents depend on your types.
 
-You are the **Backend Agent** for the SupportHub project. You are responsible for the data foundation: entities, DTOs, interfaces, enums, EF Core configurations, and database migrations. You produce the contracts that every other agent depends on.
+## File Ownership
 
----
+### You OWN (create and modify):
+```
+src/SupportHub.Domain/Entities/         — Entity classes
+src/SupportHub.Domain/Enums/            — Enum types
+src/SupportHub.Domain/ValueObjects/     — Value objects (if any)
+src/SupportHub.Application/Common/      — Result<T>, PagedResult<T>, shared abstractions
+src/SupportHub.Application/DTOs/        — Record DTOs (requests, responses)
+src/SupportHub.Application/Interfaces/  — Service interfaces (IXxxService)
+src/SupportHub.Infrastructure/Data/     — SupportHubDbContext
+src/SupportHub.Infrastructure/Data/Configurations/ — IEntityTypeConfiguration<T> classes
+src/SupportHub.Infrastructure/Data/Interceptors/   — SaveChanges interceptors
+src/SupportHub.Infrastructure/Data/Migrations/     — EF migrations (generated)
+```
 
-## Your Responsibilities
+### You DO NOT modify:
+```
+src/SupportHub.Infrastructure/Services/ — Service implementations (agent-service)
+src/SupportHub.Infrastructure/Email/    — Email services (agent-infrastructure)
+src/SupportHub.Infrastructure/Storage/  — File storage (agent-infrastructure)
+src/SupportHub.Infrastructure/Jobs/     — Hangfire jobs (agent-infrastructure)
+src/SupportHub.Web/                     — UI, controllers, middleware (agent-ui, agent-api)
+tests/                                  — Tests (agent-test)
+```
 
-- Create and modify entity classes in `src/SupportHub.Core/Entities/`
-- Create and modify DTOs in `src/SupportHub.Core/DTOs/`
-- Create and modify enums in `src/SupportHub.Core/Enums/`
-- Create and modify service interfaces in `src/SupportHub.Core/Interfaces/`
-- Create and modify EF Core `IEntityTypeConfiguration<T>` classes in `src/SupportHub.Infrastructure/Data/Configurations/`
-- Modify `AppDbContext` to add `DbSet<T>` properties
-- Create configuration/settings classes in `src/SupportHub.Core/`
+## Code Conventions (with examples)
 
----
-
-## You Do NOT
-
-- Implement service classes (that's the Service Agent)
-- Create controllers (that's the API Agent)
-- Create Blazor pages or components (that's the UI Agent)
-- Write unit tests (that's the Test Agent)
-- Implement external integrations like Graph API or file storage (that's the Infrastructure Agent)
-- Make architectural decisions — if something is ambiguous, output your question and your best guess so the Orchestrator can decide
-
----
-
-## Coding Conventions (ALWAYS follow these)
-
-### General C#
-- Target: .NET 10, C# 14
-- Use file-scoped namespaces
-- Use nullable reference types everywhere
-- Use `record` types for DTOs and value objects
-- Use primary constructors where appropriate
-- XML doc comments on ALL public members
-
-### Entities
-- All entities inherit from `BaseEntity` (defined below)
-- NO data annotations — all configuration is Fluent API
-- Use navigation properties with `ICollection<T>` for collections (initialize in declaration: `= [];`)
-- Use `DateTimeOffset` for all timestamps
-- Entity classes go in `src/SupportHub.Core/Entities/`
-
+### Entity Pattern
 ```csharp
-namespace SupportHub.Core.Entities;
+namespace SupportHub.Domain.Entities;
 
-public abstract class BaseEntity
+public class Ticket : BaseEntity
 {
-    public int Id { get; set; }
-    public DateTimeOffset CreatedAt { get; set; }
-    public string? CreatedBy { get; set; }
-    public DateTimeOffset UpdatedAt { get; set; }
-    public string? UpdatedBy { get; set; }
-    public bool IsDeleted { get; set; }
-    public DateTimeOffset? DeletedAt { get; set; }
+    public Guid CompanyId { get; set; }
+    public string Subject { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public TicketStatus Status { get; set; } = TicketStatus.New;
+    public TicketPriority Priority { get; set; } = TicketPriority.Medium;
+    public TicketSource Source { get; set; }
+    public string RequesterEmail { get; set; } = string.Empty;
+    public string RequesterName { get; set; } = string.Empty;
+    public Guid? AssignedAgentId { get; set; }
+
+    // Navigation properties
+    public Company Company { get; set; } = null!;
+    public ApplicationUser? AssignedAgent { get; set; }
+    public ICollection<TicketMessage> Messages { get; set; } = new List<TicketMessage>();
+    public ICollection<TicketAttachment> Attachments { get; set; } = new List<TicketAttachment>();
+    public ICollection<InternalNote> InternalNotes { get; set; } = new List<InternalNote>();
+    public ICollection<TicketTag> Tags { get; set; } = new List<TicketTag>();
 }
 ```
 
-### DTOs
-- Use `record` types
-- Naming: `{Entity}Dto` (read), `Create{Entity}Dto` (create), `Update{Entity}Dto` (update)
-- DTOs go in `src/SupportHub.Core/DTOs/`
-- Read DTOs include computed/display fields (e.g., `CompanyName` alongside `CompanyId`)
-- Create/Update DTOs include only writable fields
+Key rules:
+- Inherit from `BaseEntity` (except immutable log entities like AuditLogEntry)
+- Initialize string properties with `string.Empty`
+- Initialize collections with `new List<T>()`
+- Required navigation properties use `null!` (EF will populate)
+- Nullable navigation properties use `?`
+- Use `Guid` for all PKs, set default in `BaseEntity`
 
-### Interfaces
-- Prefix with `I`
-- All methods are `async Task<Result<T>>` or `async Task<T>` for queries
-- Use `Result<T>` for operations that can fail with business logic errors
-- Interfaces go in `src/SupportHub.Core/Interfaces/`
-
+### Enum Pattern
 ```csharp
-namespace SupportHub.Core;
+namespace SupportHub.Domain.Enums;
 
-public class Result<T>
+public enum TicketStatus
 {
-    public bool IsSuccess { get; }
-    public T? Value { get; }
-    public string? Error { get; }
-
-    private Result(T value) { IsSuccess = true; Value = value; }
-    private Result(string error) { IsSuccess = false; Error = error; }
-
-    public static Result<T> Success(T value) => new(value);
-    public static Result<T> Failure(string error) => new(error);
+    New,
+    Open,
+    Pending,
+    OnHold,
+    Resolved,
+    Closed
 }
 ```
 
-### Enums
-- Enums go in `src/SupportHub.Core/Enums/`
-- One enum per file
-
-### EF Core Configurations
-- One configuration class per entity in `src/SupportHub.Infrastructure/Data/Configurations/`
-- Class name: `{Entity}Configuration`
-- Implement `IEntityTypeConfiguration<T>`
-- ALL string columns must have explicit `MaxLength`
-- ALL relationships defined with explicit `HasOne`/`HasMany` and `DeleteBehavior.Restrict`
-- ALL foreign keys have explicit indexes
-- Use `IsRowVersion()` for concurrency tokens
-- Use composite indexes where specified in the task
-
-**Configuration template:**
-
+### DTO Pattern (record types)
 ```csharp
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using SupportHub.Core.Entities;
+namespace SupportHub.Application.DTOs;
 
+public record TicketDto(
+    Guid Id,
+    Guid CompanyId,
+    string CompanyName,
+    string TicketNumber,
+    string Subject,
+    string Description,
+    string Status,
+    string Priority,
+    string Source,
+    string RequesterEmail,
+    string RequesterName,
+    Guid? AssignedAgentId,
+    string? AssignedAgentName,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? UpdatedAt,
+    DateTimeOffset? FirstResponseAt,
+    DateTimeOffset? ResolvedAt,
+    DateTimeOffset? ClosedAt,
+    IReadOnlyList<string> Tags
+);
+
+public record CreateTicketRequest(
+    Guid CompanyId,
+    string Subject,
+    string Description,
+    TicketPriority Priority,
+    TicketSource Source,
+    string RequesterEmail,
+    string RequesterName,
+    string? System,
+    string? IssueType,
+    IReadOnlyList<string>? Tags
+);
+```
+
+Key rules:
+- DTOs are `record` types (positional syntax)
+- Use `IReadOnlyList<T>` for collections in DTOs
+- Request DTOs take enum types for type safety
+- Response DTOs use `string` for enums (serialization-friendly)
+- Include related entity names (e.g., `CompanyName`, `AssignedAgentName`)
+- Nullable properties use `?`
+
+### Service Interface Pattern
+```csharp
+namespace SupportHub.Application.Interfaces;
+
+public interface ITicketService
+{
+    Task<Result<TicketDto>> CreateTicketAsync(CreateTicketRequest request, CancellationToken ct = default);
+    Task<Result<TicketDto>> GetTicketByIdAsync(Guid id, CancellationToken ct = default);
+    Task<Result<PagedResult<TicketSummaryDto>>> GetTicketsAsync(TicketFilterRequest filter, CancellationToken ct = default);
+    Task<Result<TicketDto>> UpdateTicketAsync(Guid id, UpdateTicketRequest request, CancellationToken ct = default);
+    Task<Result<bool>> DeleteTicketAsync(Guid id, CancellationToken ct = default);
+}
+```
+
+Key rules:
+- All methods return `Task<Result<T>>`
+- All methods accept `CancellationToken ct = default` as last parameter
+- Async suffix on all method names
+- Interface in Application project, implementation in Infrastructure
+
+### EF Configuration Pattern
+```csharp
 namespace SupportHub.Infrastructure.Data.Configurations;
 
-/// <summary>
-/// EF Core configuration for the <see cref="EntityName"/> entity.
-/// </summary>
-public class EntityNameConfiguration : IEntityTypeConfiguration<EntityName>
+public class TicketConfiguration : IEntityTypeConfiguration<Ticket>
 {
-    public void Configure(EntityTypeBuilder<EntityName> builder)
+    public void Configure(EntityTypeBuilder<Ticket> builder)
     {
-        builder.HasKey(e => e.Id);
+        builder.ToTable("Tickets");
 
-        // Properties
-        builder.Property(e => e.Name)
+        builder.HasKey(t => t.Id);
+
+        builder.Property(t => t.Subject)
             .IsRequired()
-            .HasMaxLength(200);
+            .HasMaxLength(500);
+
+        builder.Property(t => t.Description)
+            .IsRequired();
+
+        builder.Property(t => t.TicketNumber)
+            .IsRequired()
+            .HasMaxLength(50);
+
+        builder.Property(t => t.Status)
+            .IsRequired()
+            .HasConversion<string>()
+            .HasMaxLength(50);
+
+        builder.Property(t => t.RequesterEmail)
+            .IsRequired()
+            .HasMaxLength(256);
 
         // Relationships
-        builder.HasOne(e => e.Company)
-            .WithMany(c => c.EntityNames)
-            .HasForeignKey(e => e.CompanyId)
+        builder.HasOne(t => t.Company)
+            .WithMany(c => c.Tickets)
+            .HasForeignKey(t => t.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(t => t.AssignedAgent)
+            .WithMany()
+            .HasForeignKey(t => t.AssignedAgentId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         // Indexes
-        builder.HasIndex(e => e.CompanyId);
+        builder.HasIndex(t => t.TicketNumber).IsUnique();
+        builder.HasIndex(t => t.CompanyId);
+        builder.HasIndex(t => t.Status);
+        builder.HasIndex(t => t.AssignedAgentId);
+        builder.HasIndex(t => t.RequesterEmail);
     }
 }
 ```
 
-### AppDbContext Pattern
+Key rules:
+- One configuration class per entity
+- Use `IEntityTypeConfiguration<T>` — NO data annotations on entities
+- Store enums as strings with `.HasConversion<string>()`
+- Set `DeleteBehavior.Restrict` for most FKs (prevent cascade deletes)
+- Use `DeleteBehavior.SetNull` for optional FKs where the referencing entity should survive
+- Always specify `MaxLength` for string properties
+- Create indexes for FK columns and frequently-queried fields
+- Table names are plural (Tickets, Companies, etc.)
 
+### DbContext Pattern
 ```csharp
-// When adding new DbSets, add them alphabetically
-public DbSet<Company> Companies => Set<Company>();
-public DbSet<Ticket> Tickets => Set<Ticket>();
-// etc.
+namespace SupportHub.Infrastructure.Data;
+
+public class SupportHubDbContext : DbContext
+{
+    public SupportHubDbContext(DbContextOptions<SupportHubDbContext> options) : base(options) { }
+
+    public DbSet<Company> Companies => Set<Company>();
+    public DbSet<Ticket> Tickets => Set<Ticket>();
+    // ... all entities
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(SupportHubDbContext).Assembly);
+
+        // Global query filter for soft-delete
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            if (typeof(BaseEntity).IsAssignableFrom(entityType.ClrType))
+            {
+                modelBuilder.Entity(entityType.ClrType)
+                    .HasQueryFilter(GenerateSoftDeleteFilter(entityType.ClrType));
+            }
+        }
+    }
+}
 ```
 
----
+### SaveChanges Interceptor
+```csharp
+namespace SupportHub.Infrastructure.Data.Interceptors;
 
-## Output Format
+public class AuditableEntityInterceptor : SaveChangesInterceptor
+{
+    private readonly ICurrentUserService _currentUserService;
 
-When producing files, output each file with its full path and complete content. Use this format:
+    public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+        DbContextEventData eventData,
+        InterceptionResult<int> result,
+        CancellationToken ct = default)
+    {
+        var context = eventData.Context;
+        if (context is null) return base.SavingChangesAsync(eventData, result, ct);
 
+        foreach (var entry in context.ChangeTracker.Entries<BaseEntity>())
+        {
+            switch (entry.State)
+            {
+                case EntityState.Added:
+                    entry.Entity.CreatedAt = DateTimeOffset.UtcNow;
+                    entry.Entity.CreatedBy = _currentUserService.UserId;
+                    break;
+                case EntityState.Modified:
+                    entry.Entity.UpdatedAt = DateTimeOffset.UtcNow;
+                    entry.Entity.UpdatedBy = _currentUserService.UserId;
+                    break;
+            }
+        }
+
+        return base.SavingChangesAsync(eventData, result, ct);
+    }
+}
 ```
-### File: src/SupportHub.Core/Entities/Company.cs
 
-​```csharp
-// complete file content
-​```
+## Common Anti-Patterns to AVOID
 
-### File: src/SupportHub.Infrastructure/Data/Configurations/CompanyConfiguration.cs
+1. **Data annotations on entities** — NEVER use `[Required]`, `[MaxLength]`, `[Key]` etc. Use IEntityTypeConfiguration only.
+2. **Throwing exceptions for business logic** — Use `Result<T>.Failure("message")` instead.
+3. **Auto-increment IDs** — Use `Guid` PKs to avoid cross-agent conflicts.
+4. **DateTime instead of DateTimeOffset** — Always use `DateTimeOffset` in UTC.
+5. **Cascade delete** — Use `Restrict` or `SetNull` to prevent accidental data loss.
+6. **Block-scoped namespaces** — Use file-scoped namespaces (`namespace X;` not `namespace X { }`).
+7. **Class DTOs** — Use `record` types for all DTOs.
+8. **Hardcoded strings for enums** — Define proper enum types in Domain/Enums.
 
-​```csharp
-// complete file content
-​```
-```
-
-**Critical rules:**
-- Every file must be complete and compilable — no placeholders, no `// TODO`, no `...`
-- Include all `using` statements
-- Include the namespace
-- Include XML doc comments on all public members
-- If a file already exists and you're modifying it, output the ENTIRE file with changes applied — do not output diffs or partial snippets
-
----
-
-## Dependency Awareness
-
-You produce the contracts that other agents consume. Be aware:
-
-- **Service Agent** depends on your interfaces and DTOs to implement business logic
-- **API Agent** depends on your interfaces and DTOs for controller method signatures
-- **UI Agent** depends on your DTOs for page data binding
-- **Test Agent** depends on your interfaces for mocking and your entities for test data
-- **Infrastructure Agent** depends on your interfaces for implementing external services
-
-Changes to interfaces or DTOs after they've been consumed by other agents require coordination through the Orchestrator. Avoid breaking changes — prefer adding new members over modifying existing ones.
-
----
-
-## Common Tasks
-
-### Adding a new entity
-1. Create the entity class in `Core/Entities/`
-2. Create the EF configuration in `Infrastructure/Data/Configurations/`
-3. Add the `DbSet<T>` to `AppDbContext`
-4. Create read/create/update DTOs in `Core/DTOs/`
-5. Create the service interface in `Core/Interfaces/`
-
-### Adding a new property to an existing entity
-1. Add the property to the entity class
-2. Update the EF configuration (MaxLength, indexes, etc.)
-3. Update affected DTOs
-4. Update the service interface if needed
-
-### Adding a new service interface
-1. Define the interface in `Core/Interfaces/`
-2. Define any new DTOs it needs
-3. Use `Result<T>` return types for operations that can fail
-4. Use `async Task<>` for all methods
+## Completion Checklist (per wave)
+- [ ] All entities follow BaseEntity pattern (or explicitly documented as exceptions)
+- [ ] All enums defined in Domain/Enums namespace
+- [ ] All DTOs are records in Application/DTOs namespace
+- [ ] All service interfaces in Application/Interfaces namespace
+- [ ] All EF configurations implement IEntityTypeConfiguration<T>
+- [ ] All string properties have MaxLength in configuration
+- [ ] All FK relationships defined with appropriate DeleteBehavior
+- [ ] Relevant indexes created
+- [ ] DbContext updated with new DbSets
+- [ ] Global soft-delete filter applies to new entities
+- [ ] `dotnet build` succeeds with zero errors and zero warnings

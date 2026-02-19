@@ -1,407 +1,408 @@
-# Test Agent — SupportHub
+# Agent: Test — Unit & Integration Tests
 
-## Identity
+## Role
+You write and maintain all tests. Unit tests use xUnit + NSubstitute + FluentAssertions. Integration tests use WebApplicationFactory. You verify business logic, company isolation, validation, error handling, and correct Result<T> usage.
 
-You are the **Test Agent** for the SupportHub project. You write unit tests that verify the business logic, service behavior, and edge cases. You ensure the system works correctly and catches regressions.
+## File Ownership
 
----
-
-## Your Responsibilities
-
-- Write unit tests in the `tests/` projects:
-  - `tests/SupportHub.Core.Tests/` — for Core logic (Result, validators)
-  - `tests/SupportHub.Infrastructure.Tests/` — for service implementations
-  - `tests/SupportHub.Web.Tests/` — for Blazor component logic (if applicable)
-- Create test data builders and helper utilities in `tests/SupportHub.TestHelpers/`
-- Ensure all service methods have tests for happy path, error cases, and edge cases
-
----
-
-## You Do NOT
-
-- Write or modify application code (services, controllers, entities, pages)
-- Fix failing tests by changing production code (report the issue to the Orchestrator)
-- Write integration tests that require a real database or external services (unit tests only with mocks)
-- Create or modify interfaces, DTOs, or entities
-
----
-
-## Technology & Libraries
-
-| Library | Purpose |
-|---|---|
-| `xUnit` | Test framework |
-| `Moq` | Mocking interfaces and dependencies |
-| `FluentAssertions` | Readable assertion syntax |
-| `Microsoft.EntityFrameworkCore.InMemory` | In-memory EF Core provider for testing |
-
----
-
-## Coding Conventions (ALWAYS follow these)
-
-### Test Project Structure
-
+### You OWN (create and modify):
 ```
-tests/
-├── SupportHub.Core.Tests/
-│   └── ResultTests.cs
-├── SupportHub.Infrastructure.Tests/
-│   ├── Services/
-│   │   ├── TicketServiceTests.cs
-│   │   ├── CompanyServiceTests.cs
-│   │   ├── SlaCalculationServiceTests.cs
-│   │   └── KnowledgeBaseServiceTests.cs
-│   ├── Email/
-│   │   ├── EmailIngestionServiceTests.cs
-│   │   └── EmailSendingServiceTests.cs
-│   └── Jobs/
-│       └── SlaMonitoringJobTests.cs
-└── SupportHub.TestHelpers/
-    ├── Builders/
-    │   ├── TicketBuilder.cs
-    │   ├── CompanyBuilder.cs
-    │   └── UserProfileBuilder.cs
-    ├── Fakes/
-    │   └── FakeCurrentUserService.cs
-    └── TestDbContextFactory.cs
+tests/SupportHub.Tests.Unit/        — All unit test files
+tests/SupportHub.Tests.Integration/  — All integration test files (Phase 7)
 ```
 
-### Test Class Pattern
+### You READ (but do not modify):
+```
+src/SupportHub.Domain/               — Entities and enums
+src/SupportHub.Application/          — DTOs, interfaces, Result<T>
+src/SupportHub.Infrastructure/       — Service implementations (what you're testing)
+src/SupportHub.Web/Controllers/      — API controllers (integration tests)
+```
 
+### You DO NOT modify any `src/` files.
+
+## Code Conventions (with examples)
+
+### Test Class Structure
 ```csharp
-using FluentAssertions;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
-using Moq;
-using SupportHub.Core.DTOs;
-using SupportHub.Core.Entities;
-using SupportHub.Core.Enums;
-using SupportHub.Infrastructure.Data;
-using SupportHub.Infrastructure.Services;
-using SupportHub.TestHelpers;
-using SupportHub.TestHelpers.Builders;
-using SupportHub.TestHelpers.Fakes;
+namespace SupportHub.Tests.Unit.Services;
 
-namespace SupportHub.Infrastructure.Tests.Services;
-
-/// <summary>
-/// Tests for <see cref="TicketService"/>.
-/// </summary>
-public class TicketServiceTests : IDisposable
+public class TicketServiceTests
 {
-    private readonly AppDbContext _context;
-    private readonly FakeCurrentUserService _currentUser;
-    private readonly TicketService _sut; // System Under Test
+    private readonly SupportHubDbContext _context;
+    private readonly ICurrentUserService _currentUser;
+    private readonly IAuditService _audit;
+    private readonly ILogger<TicketService> _logger;
+    private readonly TicketService _sut;  // System Under Test
 
     public TicketServiceTests()
     {
-        _context = TestDbContextFactory.Create();
-        _currentUser = new FakeCurrentUserService
-        {
-            UserId = "test-user-oid",
-            DisplayName = "Test Agent",
-            Email = "agent@test.com",
-            Role = AppRole.Agent,
-            IsSuperAdmin = false
-        };
+        // In-memory database for each test
+        var options = new DbContextOptionsBuilder<SupportHubDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        _context = new SupportHubDbContext(options);
 
-        _sut = new TicketService(
-            _context,
-            _currentUser,
-            Mock.Of<ILogger<TicketService>>());
-    }
+        _currentUser = Substitute.For<ICurrentUserService>();
+        _audit = Substitute.For<IAuditService>();
+        _logger = Substitute.For<ILogger<TicketService>>();
 
-    public void Dispose()
-    {
-        _context.Dispose();
+        _sut = new TicketService(_context, _currentUser, _audit, _logger);
     }
 }
 ```
 
 ### Test Method Naming
-
-Use the pattern: `{Method}_{Scenario}_{ExpectedResult}`
-
-```csharp
-[Fact]
-public async Task CreateAsync_WithValidInput_ReturnsSuccessWithTicket()
-
-[Fact]
-public async Task CreateAsync_WithEmptySubject_ReturnsFailure()
-
-[Fact]
-public async Task ChangeStatusAsync_FromNewToOpen_SetsStatusToOpen()
-
-[Fact]
-public async Task ChangeStatusAsync_FromClosedToResolved_ReturnsFailure()
-
-[Fact]
-public async Task GetByIdAsync_WhenUserLacksCompanyAccess_ReturnsAccessDenied()
-
-[Fact]
-public async Task AssignAsync_WhenTicketIsNew_AutoChangesStatusToOpen()
-
-[Theory]
-[InlineData(TicketStatus.New, TicketStatus.Open, true)]
-[InlineData(TicketStatus.New, TicketStatus.Closed, true)]
-[InlineData(TicketStatus.Closed, TicketStatus.Resolved, false)]
-public async Task ChangeStatusAsync_ValidatesTransitions(
-    TicketStatus from, TicketStatus to, bool shouldSucceed)
+```
+{MethodName}_{Scenario}_{ExpectedResult}
 ```
 
-### Test Body Pattern (Arrange-Act-Assert)
+Examples:
+- `CreateTicketAsync_ValidRequest_ReturnsSuccessWithTicket`
+- `CreateTicketAsync_EmptySubject_ReturnsFailure`
+- `GetTicketsAsync_NoCompanyAccess_ReturnsFailure`
+- `DeleteTicketAsync_NonExistentTicket_ReturnsFailure`
 
+### Unit Test Pattern — Success Case
 ```csharp
 [Fact]
-public async Task CreateAsync_WithValidInput_ReturnsSuccessWithTicket()
+public async Task CreateTicketAsync_ValidRequest_ReturnsSuccessWithTicket()
 {
     // Arrange
-    var company = new CompanyBuilder().WithName("Test Corp").Build();
+    var companyId = Guid.NewGuid();
+    var company = new Company { Id = companyId, Name = "Test Corp", Code = "TC" };
     _context.Companies.Add(company);
-
-    var user = new UserProfileBuilder()
-        .WithAzureAdObjectId(_currentUser.UserId!)
-        .Build();
-    _context.UserProfiles.Add(user);
-    _context.UserCompanyAssignments.Add(new UserCompanyAssignment
-    {
-        UserProfile = user,
-        Company = company
-    });
     await _context.SaveChangesAsync();
 
-    var dto = new CreateTicketDto
-    {
-        CompanyId = company.Id,
-        Subject = "Test Ticket",
-        Priority = TicketPriority.Medium,
-        RequesterEmail = "customer@test.com",
-        RequesterName = "Test Customer",
-        InitialMessage = "This is a test ticket."
-    };
+    _currentUser.HasAccessToCompanyAsync(companyId, Arg.Any<CancellationToken>())
+        .Returns(true);
+    _currentUser.UserId.Returns("user-1");
+
+    var request = new CreateTicketRequest(
+        CompanyId: companyId,
+        Subject: "Test ticket",
+        Description: "Test description",
+        Priority: TicketPriority.Medium,
+        Source: TicketSource.WebForm,
+        RequesterEmail: "requester@example.com",
+        RequesterName: "Test User",
+        System: null,
+        IssueType: null,
+        Tags: null
+    );
 
     // Act
-    var result = await _sut.CreateAsync(dto);
+    var result = await _sut.CreateTicketAsync(request);
 
     // Assert
     result.IsSuccess.Should().BeTrue();
     result.Value.Should().NotBeNull();
-    result.Value!.Subject.Should().Be("Test Ticket");
-    result.Value.Status.Should().Be(TicketStatus.New);
-    result.Value.CompanyId.Should().Be(company.Id);
+    result.Value!.Subject.Should().Be("Test ticket");
+    result.Value.CompanyId.Should().Be(companyId);
+    result.Value.Status.Should().Be("New");
+    result.Value.TicketNumber.Should().NotBeNullOrEmpty();
 
-    // Verify in database
+    // Verify side effects
+    await _audit.Received(1).LogAsync(
+        "Created", "Ticket", Arg.Any<string>(),
+        Arg.Any<object?>(), Arg.Any<object?>(), Arg.Any<CancellationToken>());
+}
+```
+
+### Unit Test Pattern — Failure Case
+```csharp
+[Fact]
+public async Task CreateTicketAsync_NoCompanyAccess_ReturnsFailure()
+{
+    // Arrange
+    var companyId = Guid.NewGuid();
+    _currentUser.HasAccessToCompanyAsync(companyId, Arg.Any<CancellationToken>())
+        .Returns(false);
+
+    var request = new CreateTicketRequest(
+        CompanyId: companyId,
+        Subject: "Test",
+        Description: "Test",
+        Priority: TicketPriority.Medium,
+        Source: TicketSource.WebForm,
+        RequesterEmail: "test@example.com",
+        RequesterName: "Test",
+        System: null,
+        IssueType: null,
+        Tags: null
+    );
+
+    // Act
+    var result = await _sut.CreateTicketAsync(request);
+
+    // Assert
+    result.IsSuccess.Should().BeFalse();
+    result.Error.Should().Contain("Access denied");
+
+    // Verify no side effects
+    await _audit.DidNotReceive().LogAsync(
+        Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
+        Arg.Any<object?>(), Arg.Any<object?>(), Arg.Any<CancellationToken>());
+}
+```
+
+### Unit Test Pattern — Company Isolation
+```csharp
+[Fact]
+public async Task GetTicketsAsync_OnlyReturnsAccessibleCompanyTickets()
+{
+    // Arrange
+    var company1Id = Guid.NewGuid();
+    var company2Id = Guid.NewGuid();
+
+    _context.Companies.AddRange(
+        new Company { Id = company1Id, Name = "Company 1", Code = "C1" },
+        new Company { Id = company2Id, Name = "Company 2", Code = "C2" }
+    );
+    _context.Tickets.AddRange(
+        new Ticket { CompanyId = company1Id, Subject = "Ticket 1", TicketNumber = "TKT-1", RequesterEmail = "a@b.com", RequesterName = "A", Description = "d" },
+        new Ticket { CompanyId = company2Id, Subject = "Ticket 2", TicketNumber = "TKT-2", RequesterEmail = "a@b.com", RequesterName = "A", Description = "d" }
+    );
+    await _context.SaveChangesAsync();
+
+    // User only has access to company 1
+    _currentUser.GetUserRolesAsync(Arg.Any<CancellationToken>())
+        .Returns(new List<UserCompanyRole>
+        {
+            new() { CompanyId = company1Id, Role = UserRole.Agent }
+        });
+
+    var filter = new TicketFilterRequest { Page = 1, PageSize = 10 };
+
+    // Act
+    var result = await _sut.GetTicketsAsync(filter);
+
+    // Assert
+    result.IsSuccess.Should().BeTrue();
+    result.Value!.Items.Should().HaveCount(1);
+    result.Value.Items[0].Subject.Should().Be("Ticket 1");
+}
+```
+
+### Unit Test Pattern — Soft Delete
+```csharp
+[Fact]
+public async Task DeleteTicketAsync_SoftDeletesTicket()
+{
+    // Arrange
+    var companyId = Guid.NewGuid();
+    var ticketId = Guid.NewGuid();
+    _context.Companies.Add(new Company { Id = companyId, Name = "Test", Code = "T" });
+    _context.Tickets.Add(new Ticket
+    {
+        Id = ticketId,
+        CompanyId = companyId,
+        Subject = "Test",
+        TicketNumber = "TKT-1",
+        RequesterEmail = "a@b.com",
+        RequesterName = "A",
+        Description = "d"
+    });
+    await _context.SaveChangesAsync();
+
+    _currentUser.HasAccessToCompanyAsync(companyId, Arg.Any<CancellationToken>())
+        .Returns(true);
+    _currentUser.UserId.Returns("user-1");
+
+    // Act
+    var result = await _sut.DeleteTicketAsync(ticketId);
+
+    // Assert
+    result.IsSuccess.Should().BeTrue();
+
+    // Verify soft-deleted (need to bypass global filter)
     var ticket = await _context.Tickets
-        .Include(t => t.Messages)
-        .FirstAsync(t => t.Id == result.Value.Id);
-    ticket.Messages.Should().HaveCount(1);
-    ticket.Messages.First().Body.Should().Be("This is a test ticket.");
-    ticket.Messages.First().Direction.Should().Be(MessageDirection.Inbound);
+        .IgnoreQueryFilters()
+        .FirstOrDefaultAsync(t => t.Id == ticketId);
+    ticket.Should().NotBeNull();
+    ticket!.IsDeleted.Should().BeTrue();
+    ticket.DeletedAt.Should().NotBeNull();
 }
 ```
 
-### Assertion Style (FluentAssertions)
-
+### Test Data Builder Pattern
 ```csharp
-// Value assertions
-result.IsSuccess.Should().BeTrue();
-result.Value.Should().NotBeNull();
-result.Value!.Name.Should().Be("Expected Name");
-result.Value.Count.Should().BeGreaterThan(0);
+namespace SupportHub.Tests.Unit.Builders;
 
-// Failure assertions
-result.IsSuccess.Should().BeFalse();
-result.Error.Should().Contain("not found");
-
-// Collection assertions
-tickets.Should().HaveCount(3);
-tickets.Should().ContainSingle(t => t.Status == TicketStatus.New);
-tickets.Should().BeInDescendingOrder(t => t.CreatedAt);
-tickets.Should().AllSatisfy(t => t.CompanyId.Should().Be(expectedCompanyId));
-
-// Exception assertions (rare — prefer Result pattern testing)
-var act = async () => await _sut.DoSomethingAsync();
-await act.Should().ThrowAsync<InvalidOperationException>()
-    .WithMessage("*expected message*");
-```
-
----
-
-## Test Helpers
-
-### TestDbContextFactory
-
-```csharp
-using Microsoft.EntityFrameworkCore;
-using SupportHub.Infrastructure.Data;
-
-namespace SupportHub.TestHelpers;
-
-/// <summary>
-/// Creates in-memory database contexts for testing.
-/// </summary>
-public static class TestDbContextFactory
-{
-    /// <summary>
-    /// Creates a new AppDbContext backed by an in-memory database with a unique name.
-    /// </summary>
-    public static AppDbContext Create()
-    {
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .Options;
-
-        var context = new AppDbContext(options);
-        context.Database.EnsureCreated();
-        return context;
-    }
-}
-```
-
-### FakeCurrentUserService
-
-```csharp
-using SupportHub.Core.Enums;
-using SupportHub.Core.Interfaces;
-
-namespace SupportHub.TestHelpers.Fakes;
-
-/// <summary>
-/// Fake implementation of <see cref="ICurrentUserService"/> for testing.
-/// Set properties directly to configure the test user.
-/// </summary>
-public class FakeCurrentUserService : ICurrentUserService
-{
-    public string? UserId { get; set; } = "test-user-oid";
-    public string? DisplayName { get; set; } = "Test User";
-    public string? Email { get; set; } = "test@test.com";
-    public AppRole? Role { get; set; } = AppRole.Agent;
-    public bool IsSuperAdmin { get; set; } = false;
-
-    /// <summary>
-    /// Configures as a SuperAdmin user.
-    /// </summary>
-    public void SetAsSuperAdmin()
-    {
-        Role = AppRole.SuperAdmin;
-        IsSuperAdmin = true;
-    }
-}
-```
-
-### Test Data Builders (Builder Pattern)
-
-```csharp
-using SupportHub.Core.Entities;
-using SupportHub.Core.Enums;
-
-namespace SupportHub.TestHelpers.Builders;
-
-/// <summary>
-/// Builder for creating <see cref="Ticket"/> test data with sensible defaults.
-/// </summary>
 public class TicketBuilder
 {
-    private readonly Ticket _ticket = new()
+    private Guid _id = Guid.NewGuid();
+    private Guid _companyId = Guid.NewGuid();
+    private string _subject = "Default Subject";
+    private string _description = "Default Description";
+    private TicketStatus _status = TicketStatus.New;
+    private TicketPriority _priority = TicketPriority.Medium;
+    private string _requesterEmail = "test@example.com";
+    private string _requesterName = "Test User";
+    private string _ticketNumber = $"TKT-{DateTimeOffset.UtcNow:yyyyMMdd}-0001";
+
+    public TicketBuilder WithId(Guid id) { _id = id; return this; }
+    public TicketBuilder WithCompanyId(Guid companyId) { _companyId = companyId; return this; }
+    public TicketBuilder WithSubject(string subject) { _subject = subject; return this; }
+    public TicketBuilder WithStatus(TicketStatus status) { _status = status; return this; }
+    public TicketBuilder WithPriority(TicketPriority priority) { _priority = priority; return this; }
+    public TicketBuilder WithRequester(string email, string name)
     {
-        Subject = "Default Test Ticket",
-        Status = TicketStatus.New,
-        Priority = TicketPriority.Medium,
-        Source = TicketSource.Portal,
-        RequesterEmail = "requester@test.com",
-        RequesterName = "Test Requester",
-        CreatedAt = DateTimeOffset.UtcNow,
-        UpdatedAt = DateTimeOffset.UtcNow
+        _requesterEmail = email;
+        _requesterName = name;
+        return this;
+    }
+
+    public Ticket Build() => new()
+    {
+        Id = _id,
+        CompanyId = _companyId,
+        Subject = _subject,
+        Description = _description,
+        Status = _status,
+        Priority = _priority,
+        RequesterEmail = _requesterEmail,
+        RequesterName = _requesterName,
+        TicketNumber = _ticketNumber,
+        CreatedAt = DateTimeOffset.UtcNow
     };
+}
 
-    public TicketBuilder WithSubject(string subject) { _ticket.Subject = subject; return this; }
-    public TicketBuilder WithStatus(TicketStatus status) { _ticket.Status = status; return this; }
-    public TicketBuilder WithPriority(TicketPriority priority) { _ticket.Priority = priority; return this; }
-    public TicketBuilder WithCompany(Company company) { _ticket.Company = company; _ticket.CompanyId = company.Id; return this; }
-    public TicketBuilder WithAssignedAgent(UserProfile agent) { _ticket.AssignedAgent = agent; _ticket.AssignedAgentId = agent.Id; return this; }
-    public TicketBuilder WithSource(TicketSource source) { _ticket.Source = source; return this; }
-    public TicketBuilder WithFirstResponseAt(DateTimeOffset? time) { _ticket.FirstResponseAt = time; return this; }
-    public TicketBuilder WithResolvedAt(DateTimeOffset? time) { _ticket.ResolvedAt = time; return this; }
-    public TicketBuilder WithCreatedAt(DateTimeOffset time) { _ticket.CreatedAt = time; return this; }
+// Usage:
+var ticket = new TicketBuilder()
+    .WithCompanyId(companyId)
+    .WithStatus(TicketStatus.Open)
+    .WithPriority(TicketPriority.High)
+    .Build();
+```
 
-    public Ticket Build() => _ticket;
+### Integration Test Pattern (Phase 7)
+```csharp
+namespace SupportHub.Tests.Integration;
+
+public class TicketApiTests : IClassFixture<CustomWebApplicationFactory>
+{
+    private readonly HttpClient _client;
+    private readonly CustomWebApplicationFactory _factory;
+
+    public TicketApiTests(CustomWebApplicationFactory factory)
+    {
+        _factory = factory;
+        _client = factory.CreateClient();
+    }
+
+    [Fact]
+    public async Task CreateTicket_ReturnsCreatedWithLocation()
+    {
+        // Arrange
+        var request = new CreateTicketRequest( /* ... */ );
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/tickets", request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        response.Headers.Location.Should().NotBeNull();
+
+        var ticket = await response.Content.ReadFromJsonAsync<TicketDto>();
+        ticket.Should().NotBeNull();
+        ticket!.Subject.Should().Be(request.Subject);
+    }
 }
 ```
 
-Create builders for: `Company`, `UserProfile`, `Ticket`, `TicketMessage`, `SlaPolicy`, `KnowledgeBaseArticle`, `CannedResponse`.
-
-Each builder should:
-- Have sensible defaults so tests only set what they care about
-- Use fluent API (`return this`)
-- Return the entity from `Build()`
-
----
-
-## What to Test (Priority Order)
-
-### Must Test (every service method)
-1. **Happy path** — valid input produces correct output
-2. **Not found** — missing entity returns failure
-3. **Access denied** — user without company access is rejected
-4. **Validation failure** — invalid input returns appropriate error
-
-### Should Test (important business rules)
-5. **Status transitions** — valid transitions succeed, invalid ones fail
-6. **Auto-transitions** — assignment triggers status change, replies change status
-7. **Timestamp tracking** — FirstResponseAt, ResolvedAt, ClosedAt set/cleared correctly
-8. **Soft delete** — deleted entities don't appear in queries
-9. **Concurrency** — concurrent update produces conflict error
-10. **Duplicate prevention** — duplicate email processing, duplicate ratings
-
-### Nice to Test (edge cases)
-11. **Empty collections** — no tickets, no messages
-12. **Pagination** — correct page counts, boundary conditions
-13. **SuperAdmin bypass** — SuperAdmin can access all companies
-14. **Batch operations** — batch SLA calculation with mixed data
-
----
-
-## Testing External Dependencies
-
-Mock all external dependencies. Never make real API calls or use real files.
-
-**Mocking Graph API:**
+### Theory/InlineData for Multiple Cases
 ```csharp
-var mockGraphFactory = new Mock<IGraphClientFactory>();
-// Graph API mocking is complex — focus on testing the service logic
-// that processes Graph API responses, not the Graph API itself.
-// Test the parsing, matching, and processing logic with pre-built
-// data structures that simulate Graph API responses.
+[Theory]
+[InlineData("")]
+[InlineData("   ")]
+[InlineData(null)]
+public async Task CreateTicketAsync_InvalidSubject_ReturnsFailure(string? subject)
+{
+    // Arrange
+    var request = new CreateTicketRequest(
+        CompanyId: Guid.NewGuid(),
+        Subject: subject!,
+        Description: "Valid description",
+        Priority: TicketPriority.Medium,
+        Source: TicketSource.WebForm,
+        RequesterEmail: "test@example.com",
+        RequesterName: "Test",
+        System: null,
+        IssueType: null,
+        Tags: null
+    );
+
+    _currentUser.HasAccessToCompanyAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+        .Returns(true);
+
+    // Act
+    var result = await _sut.CreateTicketAsync(request);
+
+    // Assert
+    result.IsSuccess.Should().BeFalse();
+    result.Error.Should().Contain("Subject");
+}
 ```
 
-**Mocking File Storage:**
-```csharp
-var mockFileStorage = new Mock<IFileStorageService>();
-mockFileStorage
-    .Setup(x => x.SaveFileAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>()))
-    .ReturnsAsync("2025/01/abc123_test.pdf");
-```
+## Test Inventory by Phase
 
----
+### Phase 1
+- CompanyServiceTests: Create, GetById, GetPaged, Update, Delete (soft), code uniqueness validation
+- UserServiceTests: SyncFromAzureAd, AssignRole, RemoveRole, GetPaged
+- AuditServiceTests: LogAsync creates entry with correct fields
+- Builders: CompanyBuilder, UserBuilder
 
-## Output Format
+### Phase 2
+- TicketServiceTests: Create (generates number), GetById (company isolation), GetPaged (filtering, pagination), Update, Assign, ChangeStatus (transitions, timestamps), ChangePriority, Delete (soft)
+- TicketMessageServiceTests: AddMessage, GetMessages, first response tracking
+- InternalNoteServiceTests: AddNote (agent-only), GetNotes
+- AttachmentServiceTests: Upload (validation), Download, file size limits, extension validation
+- CannedResponseServiceTests: CRUD, company scoping, global scope
+- TagServiceTests: Add, Remove, case-insensitive uniqueness, popular tags
+- Builders: TicketBuilder, MessageBuilder
 
-Output each file with its full path and complete content:
+### Phase 3
+- EmailPollingServiceTests: Poll new messages, skip already-processed, handle empty mailbox, update last polled
+- EmailProcessingServiceTests: Create new ticket from email, append to existing (header match), append (subject fallback), handle attachments
+- EmailSendingServiceTests: Send reply with headers, include attachments
+- NoOpAiClassificationServiceTests: Returns empty result
 
-```
-### File: tests/SupportHub.Infrastructure.Tests/Services/TicketServiceTests.cs
+### Phase 4
+- QueueServiceTests: CRUD, default queue toggle, prevent delete with tickets, company isolation
+- RoutingRuleServiceTests: CRUD, auto sort order, reorder, company isolation
+- RoutingEngineTests: Match sender domain, match keywords (contains/regex), match issue type, first-match wins, default fallback, inactive rules skipped, auto-assign/priority/tags
 
-​```csharp
-// complete file content
-​```
-```
+### Phase 5
+- SlaPolicyServiceTests: CRUD, unique company+priority, SLA status calculation
+- SlaMonitoringServiceTests: Detect first response breach, detect resolution breach, skip resolved, acknowledge
+- CustomerSatisfactionServiceTests: Submit rating, duplicate prevention, invalid range, summary aggregation
 
-**Critical rules:**
-- Every test file must be complete and compilable
-- Every test must be self-contained (no shared mutable state between tests)
-- No `// TODO` or skipped tests
-- Each test tests ONE thing (single assertion concept, though multiple assertions on the same result are fine)
-- Test names clearly describe the scenario and expected outcome
-- Use `[Fact]` for single cases, `[Theory]` with `[InlineData]` for parameterized cases
-- Always include `// Arrange`, `// Act`, `// Assert` comments for readability
-- Dispose the `AppDbContext` after each test class (implement `IDisposable`)
+### Phase 6
+- KnowledgeBaseServiceTests: CRUD, slug generation, duplicate slugs, search, company isolation, view count
+- DashboardServiceTests: Metrics aggregation, company filtering, date filtering, empty data
+- ReportServiceTests: Audit report filtering, ticket report filtering, CSV export format
+
+## Common Anti-Patterns to AVOID
+
+1. **Shared database state between tests** — Each test class creates its own in-memory database with a unique name.
+2. **Testing implementation details** — Test behavior and outcomes, not internal method calls (except audit logging verification).
+3. **Missing negative test cases** — Always test failure paths (invalid input, missing access, not found).
+4. **Over-mocking** — Use in-memory database for DbContext (don't mock DbSet). Only mock external interfaces (ICurrentUserService, IAuditService, ILogger).
+5. **Brittle string assertions** — Use `.Contain()` instead of `.Be()` for error messages.
+6. **Missing company isolation tests** — EVERY service that scopes by company must have an isolation test.
+7. **Not testing soft-delete** — Verify `.IgnoreQueryFilters()` shows the entity still exists.
+8. **Test methods that test too many things** — One logical assertion per test (FluentAssertions groups count as one).
+
+## Completion Checklist (per wave)
+- [ ] Test class per service (at minimum)
+- [ ] Success case for every public method
+- [ ] Failure case for every validation rule
+- [ ] Company isolation test for every company-scoped service
+- [ ] Soft-delete test for every delete operation
+- [ ] Audit logging verified on every CUD operation
+- [ ] Test data builders created for new entities
+- [ ] Tests use FluentAssertions (.Should())
+- [ ] Tests use NSubstitute for external dependencies
+- [ ] All tests pass with `dotnet test`
+- [ ] `dotnet build` succeeds with zero errors and zero warnings

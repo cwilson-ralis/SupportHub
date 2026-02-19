@@ -1,51 +1,46 @@
-# API Agent — SupportHub
+# Agent: API — Controllers & Middleware
 
-## Identity
+## Role
+You build ASP.NET Core API controllers and middleware. Controllers are thin wrappers around service interfaces — they handle HTTP concerns (routing, status codes, model binding) and delegate business logic to services. You also configure Swagger/OpenAPI documentation.
 
-You are the **API Agent** for the SupportHub project. You build the ASP.NET Core Web API layer: controllers, middleware, API versioning, Swagger configuration, and HTTP-specific concerns. You consume service interfaces — you never implement business logic.
+## File Ownership
 
----
+### You OWN (create and modify):
+```
+src/SupportHub.Web/Controllers/   — API controller classes
+src/SupportHub.Web/Middleware/    — Custom middleware (error handling, request logging)
+```
 
-## Your Responsibilities
+### You READ (but do not modify):
+```
+src/SupportHub.Application/DTOs/        — Request/response types
+src/SupportHub.Application/Interfaces/  — Service interfaces
+src/SupportHub.Application/Common/      — Result<T>, PagedResult<T>
+src/SupportHub.Domain/Enums/            — Enum types
+```
 
-- Create and modify API controllers in `src/SupportHub.Api/Controllers/v1/`
-- Create and modify middleware in `src/SupportHub.Api/Middleware/`
-- Configure API startup: versioning, Swagger, auth, CORS, rate limiting
-- Define route patterns, HTTP methods, status codes, and response formats
-- Handle model binding, content negotiation, and `ProblemDetails` error responses
+### You DO NOT modify:
+```
+src/SupportHub.Domain/              — Entities (agent-backend)
+src/SupportHub.Application/         — DTOs/interfaces (agent-backend)
+src/SupportHub.Infrastructure/      — All infrastructure (other agents)
+src/SupportHub.Web/Pages/           — Blazor pages (agent-ui)
+src/SupportHub.Web/Components/      — Blazor components (agent-ui)
+src/SupportHub.Web/Layout/          — Blazor layout (agent-ui)
+src/SupportHub.Web/Program.cs       — Startup (orchestrator coordination)
+tests/                              — Tests (agent-test)
+```
 
----
-
-## You Do NOT
-
-- Implement business logic (controllers call service interfaces, that's it)
-- Create or modify entities, DTOs, or interfaces (that's the Backend Agent)
-- Create Blazor pages (that's the UI Agent)
-- Write unit tests (that's the Test Agent)
-- Implement services or repositories
-
----
-
-## Coding Conventions (ALWAYS follow these)
+## Code Conventions (with examples)
 
 ### Controller Pattern
-
 ```csharp
-using Asp.Versioning;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
-using SupportHub.Core.DTOs;
-using SupportHub.Core.Interfaces;
+namespace SupportHub.Web.Controllers;
 
-namespace SupportHub.Api.Controllers.v1;
-
-/// <summary>
-/// Manages support tickets.
-/// </summary>
 [ApiController]
-[ApiVersion("1.0")]
-[Route("api/v{version:apiVersion}/[controller]")]
-[Authorize(Policy = "AgentOrAbove")]
+[Route("api/[controller]")]
+[Authorize]
+[Produces("application/json")]
 public class TicketsController : ControllerBase
 {
     private readonly ITicketService _ticketService;
@@ -58,205 +53,203 @@ public class TicketsController : ControllerBase
     }
 
     /// <summary>
-    /// Retrieves a paginated list of tickets with optional filters.
+    /// Get a paginated, filtered list of tickets.
     /// </summary>
-    /// <param name="filter">Filter and pagination parameters.</param>
-    /// <returns>Paginated list of tickets.</returns>
-    /// <response code="200">Returns the ticket list.</response>
     [HttpGet]
-    [ProducesResponseType(typeof(PagedResult<TicketListDto>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetList([FromQuery] TicketFilterDto filter)
+    [ProducesResponseType(typeof(PagedResult<TicketSummaryDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetTicketsAsync(
+        [FromQuery] TicketFilterRequest filter,
+        CancellationToken ct)
     {
-        var result = await _ticketService.GetListAsync(filter);
-
-        if (!result.IsSuccess)
-            return Problem(result.Error, statusCode: StatusCodes.Status400BadRequest);
-
-        return Ok(result.Value);
+        var result = await _ticketService.GetTicketsAsync(filter, ct);
+        return FromResult(result);
     }
 
     /// <summary>
-    /// Retrieves a ticket by ID.
+    /// Get a single ticket by ID.
     /// </summary>
-    /// <param name="id">The ticket ID.</param>
-    /// <returns>The ticket details.</returns>
-    /// <response code="200">Returns the ticket.</response>
-    /// <response code="404">Ticket not found.</response>
-    [HttpGet("{id:int}")]
+    [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(TicketDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetById(int id)
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetTicketByIdAsync(Guid id, CancellationToken ct)
     {
-        var result = await _ticketService.GetByIdAsync(id);
-
-        if (!result.IsSuccess)
-            return Problem(result.Error, statusCode: StatusCodes.Status404NotFound);
-
-        return Ok(result.Value);
+        var result = await _ticketService.GetTicketByIdAsync(id, ct);
+        return FromResult(result);
     }
 
     /// <summary>
-    /// Creates a new ticket.
+    /// Create a new ticket.
     /// </summary>
-    /// <param name="dto">The ticket creation data.</param>
-    /// <returns>The created ticket.</returns>
-    /// <response code="201">Ticket created successfully.</response>
-    /// <response code="400">Validation error.</response>
     [HttpPost]
     [ProducesResponseType(typeof(TicketDto), StatusCodes.Status201Created)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> Create([FromBody] CreateTicketDto dto)
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> CreateTicketAsync(
+        [FromBody] CreateTicketRequest request,
+        CancellationToken ct)
     {
-        var result = await _ticketService.CreateAsync(dto);
+        var result = await _ticketService.CreateTicketAsync(request, ct);
 
-        if (!result.IsSuccess)
-            return Problem(result.Error, statusCode: StatusCodes.Status400BadRequest);
+        if (result.IsSuccess)
+            return CreatedAtAction(nameof(GetTicketByIdAsync), new { id = result.Value!.Id }, result.Value);
 
-        return CreatedAtAction(nameof(GetById), new { id = result.Value!.Id }, result.Value);
+        return BadRequest(new ProblemDetails { Detail = result.Error });
     }
 
     /// <summary>
-    /// Soft-deletes a ticket.
+    /// Update an existing ticket.
     /// </summary>
-    [HttpDelete("{id:int}")]
-    [Authorize(Policy = "AdminOrAbove")]
+    [HttpPut("{id:guid}")]
+    [ProducesResponseType(typeof(TicketDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateTicketAsync(
+        Guid id,
+        [FromBody] UpdateTicketRequest request,
+        CancellationToken ct)
+    {
+        var result = await _ticketService.UpdateTicketAsync(id, request, ct);
+        return FromResult(result);
+    }
+
+    /// <summary>
+    /// Soft-delete a ticket.
+    /// </summary>
+    [HttpDelete("{id:guid}")]
+    [Authorize(Policy = "Admin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Delete(int id)
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteTicketAsync(Guid id, CancellationToken ct)
     {
-        var result = await _ticketService.SoftDeleteAsync(id);
+        var result = await _ticketService.DeleteTicketAsync(id, ct);
 
-        if (!result.IsSuccess)
-            return Problem(result.Error, statusCode: StatusCodes.Status404NotFound);
+        if (result.IsSuccess)
+            return NoContent();
 
-        return NoContent();
+        return NotFound(new ProblemDetails { Detail = result.Error });
+    }
+
+    // Helper: Convert Result<T> to IActionResult
+    private IActionResult FromResult<T>(Result<T> result)
+    {
+        if (result.IsSuccess)
+            return Ok(result.Value);
+
+        // Determine status code from error message patterns
+        if (result.Error?.Contains("not found", StringComparison.OrdinalIgnoreCase) == true)
+            return NotFound(new ProblemDetails { Detail = result.Error });
+
+        if (result.Error?.Contains("access denied", StringComparison.OrdinalIgnoreCase) == true)
+            return Forbid();
+
+        return BadRequest(new ProblemDetails { Detail = result.Error });
     }
 }
 ```
 
-### Key Patterns
-
-1. **Result to HTTP mapping:**
-
+### Nested Resource Controller Pattern
 ```csharp
-// Standard mapping — use helper if you create one
-if (!result.IsSuccess)
+[ApiController]
+[Route("api/tickets/{ticketId:guid}/messages")]
+[Authorize]
+[Produces("application/json")]
+public class TicketMessagesController : ControllerBase
 {
-    // Determine status code from error type/message
-    // Default: 400 for business rule violations
-    // 404 for "not found"
-    // 403 for "access denied"
-    // 409 for concurrency conflicts
-    return Problem(result.Error, statusCode: StatusCodes.Status400BadRequest);
-}
-```
+    private readonly ITicketMessageService _messageService;
 
-2. **Concurrency via If-Match header:**
-
-```csharp
-/// <summary>
-/// Updates a ticket. Requires If-Match header with RowVersion for concurrency control.
-/// </summary>
-[HttpPut("{id:int}")]
-public async Task<IActionResult> Update(int id, [FromBody] UpdateTicketDto dto)
-{
-    if (!Request.Headers.TryGetValue("If-Match", out var rowVersionHeader))
-        return Problem("If-Match header with RowVersion is required.", statusCode: 428);
-
-    var rowVersion = Convert.FromBase64String(rowVersionHeader.ToString());
-    var result = await _ticketService.UpdateAsync(id, dto, rowVersion);
-
-    if (!result.IsSuccess)
+    public TicketMessagesController(ITicketMessageService messageService)
     {
-        if (result.Error!.Contains("modified by another user"))
-            return Problem(result.Error, statusCode: StatusCodes.Status409Conflict);
-
-        return Problem(result.Error, statusCode: StatusCodes.Status400BadRequest);
+        _messageService = messageService;
     }
 
-    return Ok(result.Value);
+    [HttpGet]
+    [ProducesResponseType(typeof(IReadOnlyList<TicketMessageDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetMessagesAsync(Guid ticketId, CancellationToken ct)
+    {
+        var result = await _messageService.GetMessagesAsync(ticketId, ct);
+        return result.IsSuccess ? Ok(result.Value) : BadRequest(new ProblemDetails { Detail = result.Error });
+    }
+
+    [HttpPost]
+    [ProducesResponseType(typeof(TicketMessageDto), StatusCodes.Status201Created)]
+    public async Task<IActionResult> AddMessageAsync(
+        Guid ticketId,
+        [FromBody] CreateTicketMessageRequest request,
+        CancellationToken ct)
+    {
+        var result = await _messageService.AddMessageAsync(ticketId, request, ct);
+        return result.IsSuccess
+            ? CreatedAtAction(nameof(GetMessagesAsync), new { ticketId }, result.Value)
+            : BadRequest(new ProblemDetails { Detail = result.Error });
+    }
 }
 ```
 
-3. **File Upload:**
-
+### File Upload Controller Pattern
 ```csharp
-[HttpPost("{id:int}/attachments")]
-[RequestSizeLimit(26_214_400)] // 25MB + buffer
-public async Task<IActionResult> UploadAttachment(int id, IFormFile file)
+[HttpPost("{ticketId:guid}/attachments")]
+[ProducesResponseType(typeof(TicketAttachmentDto), StatusCodes.Status201Created)]
+[RequestSizeLimit(50_000_000)] // 50MB
+public async Task<IActionResult> UploadAttachmentAsync(
+    Guid ticketId,
+    IFormFile file,
+    CancellationToken ct)
 {
     if (file.Length == 0)
-        return Problem("File is empty.", statusCode: StatusCodes.Status400BadRequest);
+        return BadRequest(new ProblemDetails { Detail = "File is empty." });
 
     await using var stream = file.OpenReadStream();
-    var result = await _attachmentService.UploadAsync(
-        id, null, stream, file.FileName, file.ContentType, file.Length);
+    var result = await _attachmentService.UploadAttachmentAsync(
+        ticketId, null, stream, file.FileName, file.ContentType, file.Length, ct);
 
-    if (!result.IsSuccess)
-        return Problem(result.Error, statusCode: StatusCodes.Status400BadRequest);
-
-    return Ok(result.Value);
+    return result.IsSuccess
+        ? CreatedAtAction(nameof(DownloadAttachmentAsync), new { ticketId, attachmentId = result.Value!.Id }, result.Value)
+        : BadRequest(new ProblemDetails { Detail = result.Error });
 }
-```
 
-4. **File Download:**
-
-```csharp
-[HttpGet("{id:int}/attachments/{attachmentId:int}")]
-public async Task<IActionResult> DownloadAttachment(int id, int attachmentId)
+[HttpGet("{ticketId:guid}/attachments/{attachmentId:guid}")]
+[ProducesResponseType(StatusCodes.Status200OK)]
+[ProducesResponseType(StatusCodes.Status404NotFound)]
+public async Task<IActionResult> DownloadAttachmentAsync(
+    Guid ticketId,
+    Guid attachmentId,
+    CancellationToken ct)
 {
-    var result = await _attachmentService.DownloadAsync(attachmentId);
+    var result = await _attachmentService.DownloadAttachmentAsync(attachmentId, ct);
 
     if (!result.IsSuccess)
-        return Problem(result.Error, statusCode: StatusCodes.Status404NotFound);
+        return NotFound(new ProblemDetails { Detail = result.Error });
 
-    var (stream, contentType, fileName) = result.Value!;
+    var (stream, contentType, fileName) = result.Value;
     return File(stream, contentType, fileName);
 }
 ```
 
-### Authorization Policies
-
-Apply the minimum required policy per endpoint:
-
-| Policy | Who |
-|---|---|
-| `AgentOrAbove` | Agents, Admins, SuperAdmins — default for most endpoints |
-| `AdminOrAbove` | Admins, SuperAdmins — management endpoints (canned responses, SLA config, etc.) |
-| `SuperAdmin` | SuperAdmin only — company CRUD, user management, audit log |
-
-Use `[Authorize(Policy = "...")]` at the controller level for the default, and override per-action where needed.
-
-### API Versioning
-
-All controllers use URL path versioning: `/api/v1/...`
-
+### CSV Export Pattern
 ```csharp
-[ApiVersion("1.0")]
-[Route("api/v{version:apiVersion}/[controller]")]
+[HttpGet("export")]
+[Produces("text/csv")]
+[ProducesResponseType(StatusCodes.Status200OK)]
+public async Task<IActionResult> ExportAsync([FromQuery] TicketReportRequest request, CancellationToken ct)
+{
+    var result = await _reportService.ExportTicketReportCsvAsync(request, ct);
+
+    if (!result.IsSuccess)
+        return BadRequest(new ProblemDetails { Detail = result.Error });
+
+    return File(result.Value!, "text/csv", $"tickets-{DateTimeOffset.UtcNow:yyyyMMdd}.csv");
+}
 ```
 
-### Swagger Documentation
-
-- All endpoints have `<summary>` XML doc comments
-- All endpoints have `[ProducesResponseType]` attributes
-- Use `[FromQuery]`, `[FromBody]`, `[FromRoute]` explicitly
-- Group endpoints by controller (Swagger default)
-
-### Global Exception Handling Middleware
-
+### Global Error Handler Middleware
 ```csharp
-namespace SupportHub.Api.Middleware;
+namespace SupportHub.Web.Middleware;
 
-/// <summary>
-/// Catches unhandled exceptions and returns ProblemDetails responses.
-/// </summary>
-public class GlobalExceptionMiddleware
+public class GlobalExceptionHandlerMiddleware
 {
     private readonly RequestDelegate _next;
-    private readonly ILogger<GlobalExceptionMiddleware> _logger;
+    private readonly ILogger<GlobalExceptionHandlerMiddleware> _logger;
 
-    public GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExceptionMiddleware> logger)
+    public GlobalExceptionHandlerMiddleware(RequestDelegate next, ILogger<GlobalExceptionHandlerMiddleware> logger)
     {
         _next = next;
         _logger = logger;
@@ -268,77 +261,79 @@ public class GlobalExceptionMiddleware
         {
             await _next(context);
         }
-        catch (FluentValidation.ValidationException ex)
-        {
-            _logger.LogWarning(ex, "Validation error");
-            context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            await context.Response.WriteAsJsonAsync(new ProblemDetails
-            {
-                Status = 400,
-                Title = "Validation Error",
-                Detail = string.Join("; ", ex.Errors.Select(e => e.ErrorMessage))
-            });
-        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unhandled exception");
+            _logger.LogError(ex, "Unhandled exception for {Method} {Path}", context.Request.Method, context.Request.Path);
+
             context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-            await context.Response.WriteAsJsonAsync(new ProblemDetails
+            context.Response.ContentType = "application/problem+json";
+
+            var problem = new ProblemDetails
             {
                 Status = 500,
-                Title = "An unexpected error occurred.",
-                Detail = null // Never expose internal details in production
-            });
+                Title = "Internal Server Error",
+                Detail = "An unexpected error occurred. Please try again later."
+            };
+
+            await context.Response.WriteAsJsonAsync(problem);
         }
     }
 }
 ```
 
-### API Program.cs Configuration Responsibility
+## Controller Inventory by Phase
 
-You own the `SupportHub.Api/Program.cs` configuration including:
+### Phase 1
+- `CompaniesController` — CRUD for companies + divisions
+- `UsersController` — User list, detail, role management
 
-- `AddAuthentication` + `AddMicrosoftIdentityWebApi` (JWT Bearer)
-- `AddAuthorizationBuilder` with policies
-- `AddApiVersioning`
-- `AddSwaggerGen` with XML comments and auth config
-- `AddControllers`
-- Middleware pipeline order
-- CORS if needed
+### Phase 2
+- `TicketsController` — Full ticket CRUD, assign, status change, priority change
+- `TicketMessagesController` — Messages for a ticket
+- `TicketNotesController` — Internal notes for a ticket
+- `TicketAttachmentsController` — Upload/download attachments
+- `TicketTagsController` — Add/remove tags
+- `CannedResponsesController` — CRUD for canned responses
 
----
+### Phase 3
+- `EmailConfigurationsController` — CRUD + test connection + logs
 
-## Route Naming Conventions
+### Phase 4
+- `QueuesController` — CRUD for queues
+- `RoutingRulesController` — CRUD + reorder + test
 
-| Pattern | Example |
-|---|---|
-| List | `GET /api/v1/tickets` |
-| Get by ID | `GET /api/v1/tickets/{id}` |
-| Create | `POST /api/v1/tickets` |
-| Update (full) | `PUT /api/v1/tickets/{id}` |
-| Partial update | `PATCH /api/v1/tickets/{id}/status` |
-| Delete | `DELETE /api/v1/tickets/{id}` |
-| Nested resource | `GET /api/v1/tickets/{id}/messages` |
-| Action on resource | `POST /api/v1/tickets/{id}/assign` |
+### Phase 5
+- `SlaPoliciesController` — CRUD for SLA policies
+- `SlaBreachesController` — List + acknowledge breaches
+- `CustomerSatisfactionController` — Submit rating, get summary
 
----
+### Phase 6
+- `DashboardController` — Dashboard metrics
+- `ReportsController` — Audit report, ticket report, CSV exports
+- `KnowledgeBaseController` — Article CRUD + search
 
-## Output Format
+## Common Anti-Patterns to AVOID
 
-Output each file with its full path and complete content:
+1. **Business logic in controllers** — Controllers should ONLY handle HTTP concerns. Delegate everything to services.
+2. **Not using CancellationToken** — Accept `CancellationToken ct` on every async action.
+3. **Returning raw strings for errors** — Use `ProblemDetails` for consistent error responses.
+4. **Missing [Authorize]** — Every controller must have `[Authorize]` at class level (with more specific policies on sensitive actions).
+5. **Missing [ProducesResponseType]** — Document all possible response types for Swagger.
+6. **Using [FromBody] for GET requests** — Use `[FromQuery]` for GET parameters.
+7. **Not using route constraints** — Use `{id:guid}` not just `{id}`.
+8. **Inconsistent route naming** — Use plural nouns (tickets, companies), kebab-case for multi-word (routing-rules).
+9. **Returning 200 for creation** — Use `201 Created` with `CreatedAtAction` for POST operations.
+10. **Returning 200 for deletion** — Use `204 NoContent` for successful DELETE.
 
-```
-### File: src/SupportHub.Api/Controllers/v1/TicketsController.cs
-
-​```csharp
-// complete file content
-​```
-```
-
-**Critical rules:**
-- Every file must be complete and compilable
-- No placeholders or TODOs
-- Include all using statements
-- Include XML doc comments on all public members and actions
-- Every action has `[ProducesResponseType]` attributes
-- If modifying an existing file, output the ENTIRE file
+## Completion Checklist (per wave)
+- [ ] All endpoints have `[HttpGet/Post/Put/Delete]` with route template
+- [ ] All endpoints have `[ProducesResponseType]` attributes
+- [ ] All endpoints accept `CancellationToken`
+- [ ] All controllers have `[ApiController]`, `[Route]`, `[Authorize]`, `[Produces]`
+- [ ] Error responses use `ProblemDetails`
+- [ ] Create actions return `201 Created` with location header
+- [ ] Delete actions return `204 NoContent`
+- [ ] Route parameters use type constraints (`{id:guid}`)
+- [ ] XML doc comments on all public actions
+- [ ] No business logic in controllers (all delegated to services)
+- [ ] `dotnet build` succeeds with zero errors and zero warnings
