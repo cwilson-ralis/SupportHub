@@ -1,4 +1,4 @@
-﻿# Phase 3 - Email Integration (Weeks 7-8)
+# Phase 3 - Email Integration (Weeks 7-8)
 
 > **Prerequisites:** Phase 0 (conventions), Phase 1 (foundation), and Phase 2 (core ticketing) must be complete. Companies with shared mailbox addresses are configured. Ticket creation and messaging are working.
 
@@ -6,7 +6,7 @@
 
 ## Objective
 
-Connect SupportHub to Microsoft 365 shared mailboxes via Microsoft Graph API. Inbound emails auto-create tickets or append to existing conversations. In v1, agent replies are sent from the configured company shared mailbox using application permissions. At the end of this phase, a customer can email `support@companyA.com` and receive a reply from the company support address without ever visiting the portal.
+Connect Ralis Support Hub to Microsoft 365 shared mailboxes via Microsoft Graph API. Inbound emails auto-create tickets or append to existing conversations. In v1, agent replies are sent from the configured company shared mailbox using application permissions. At the end of this phase, a customer can email `support@companyA.com` and receive a reply from the company support address without ever visiting the portal.
 
 ---
 
@@ -79,7 +79,7 @@ public interface IEmailIngestionService
  c. Try to match to an existing ticket (see matching logic below)
  d. If matched -> append as a new TicketMessage to the existing ticket
  e. If not matched -> create a new Ticket with the email as the first message
- f. Run AI classification step (see Task 3.5) for newly created email tickets where routing rules did not match. If classification returns a result, apply suggested DivisionId, SystemApplication, IssueType, and Tags to the ticket.
+ f. Run AI classification step (see Task 3.5) for newly created email tickets as the primary routing mechanism in Phase 3. If classification returns a result, apply suggested DivisionId, SystemApplication, IssueType, and Tags to the ticket. If confidence is low/no result, leave ticket in General for manual triage.
  g. Process attachments (see Task 3.3)
  h. Mark the email as read in Graph API: PATCH /users/{mailbox}/messages/{id} -> isRead = true
  i. Move the email to a "Processed" folder (create if it doesn't exist)
@@ -198,7 +198,7 @@ public interface IEmailSendingService
 
 ### Instructions
 
-Email-submitted tickets often lack structured routing data (no system identified, no issue type - sometimes just a screenshot). The AI classification step provides intelligent routing for these tickets using Azure OpenAI.
+Email-submitted tickets often lack structured routing data (no system identified, no issue type - sometimes just a screenshot). In Phase 3, AI classification is the primary routing mechanism for these tickets using Azure OpenAI. In Phase 4+, rules evaluate first and AI becomes fallback.
 
 1. **Add `AzureOpenAISettings`** configuration class in `Core/`:
 
@@ -258,10 +258,10 @@ public record AiClassificationResult(
  - Parse the JSON response into `AiClassificationResult`
  - If parsing fails or confidence < 0.5, return `null` (fall through to General queue)
  - Use `Polly` for transient fault handling (retry 2 times, timeout 30 seconds)
- - **Only call the AI when needed** - skip if: `AzureOpenAISettings.Enabled` is false, or the ticket already has routing data from structured form fields
+ - **Phase behavior:** In Phase 3, run AI for new email tickets by default (when enabled). After Phase 4 routing is in place, run AI only when rules do not produce a match
 
 4. **Store AI classification decisions** for audit and future model tuning:
- - Add `string? AiClassificationJson` (nvarchar(max)) to `Ticket` entity - stores the raw `AiClassificationResult` as JSON when AI was used
+ - `Ticket.AiClassificationJson` (added in Phase 1) stores the raw `AiClassificationResult` as JSON when AI was used
  - `Ticket.AiClassified` (bool, added in Phase 1) is set to `true` when AI was applied
 
 5. **Unit tests:**
@@ -433,7 +433,7 @@ app.Services.GetRequiredService<IRecurringJobManager>()
 - [ ] Email processing errors for one company don't block other companies
 - [ ] Email monitoring page shows processing history with error visibility
 - [ ] Hangfire dashboard is accessible only to SuperAdmins
-- [ ] AI classification runs for email tickets that have no routing rule match
+- [ ] AI classification runs as the primary router for new email tickets in Phase 3
 - [ ] AI classification correctly handles image-only email submissions (screenshots)
 - [ ] AI classification decisions are stored on the ticket for audit and tuning
 - [ ] AI service is skipped gracefully when disabled or when structured data is already present

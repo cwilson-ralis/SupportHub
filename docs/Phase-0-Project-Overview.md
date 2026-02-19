@@ -1,14 +1,16 @@
-﻿# Phase 0 - Project Overview & Conventions
+# Phase 0 - Project Overview & Conventions
 
 ## Purpose
 
-This document defines the overall architecture, conventions, and shared context for the **SupportHub** support ticket system. Every phase references this document. Read it first before executing any phase.
+This document defines the overall architecture, conventions, and shared context for the **Ralis Support Hub** support ticket system. Every phase references this document. Read it first before executing any phase.
 
 ---
 
 ## Project Summary
 
-SupportHub is an internal, multi-company support ticket system - an alternative to Zendesk for basic ticket handling. It is used by internal employees authenticated via Azure AD. Agents can handle tickets across multiple companies. Each company has its own shared M365 mailbox for email-based ticket creation and replies.
+Ralis Support Hub is an internal, multi-company support ticket system - an alternative to Zendesk for basic ticket handling. It is used by internal employees authenticated via Azure AD. Agents can handle tickets across multiple companies. Each company has its own shared M365 mailbox for email-based ticket creation and replies.
+
+Branding note: user-facing documentation and UI use the name **Ralis Support Hub**; existing solution/project identifiers such as `SupportHub.*` remain technical names.
 
 ---
 
@@ -16,14 +18,14 @@ SupportHub is an internal, multi-company support ticket system - an alternative 
 
 | Layer | Technology |
 |---|---|
-| Frontend | Blazor Server (.NET 10) with MudBlazor |
+| Frontend | Blazor Web App (.NET 10) with Server interactivity and MudBlazor |
 | Backend API | ASP.NET Core Web API (.NET 10) |
 | Database | SQL Server - on-premises (company data center) |
 | ORM | Entity Framework Core 10 |
 | Authentication | Azure AD via `Microsoft.Identity.Web` - all users authenticate with M365 accounts |
 | Authorization | Role-based + policy-based (Azure AD groups): Super Admin, Admin, Agent |
 | Email | Microsoft Graph API (M365 shared mailboxes) |
-| Real-time | SignalR (built into Blazor Server - available when needed) |
+| Real-time | SignalR (available through Blazor Web App Server interactivity when needed) |
 | Background Jobs | Hangfire with SQL Server storage - email polling, SLA monitoring, scheduled jobs |
 | File Storage | On-premises network share (behind `IFileStorageService` abstraction for future Azure Blob migration) |
 | AI / Classification | Azure OpenAI (GPT-4o-mini) - image-capable model for ticket routing/classification from unstructured email submissions |
@@ -40,7 +42,7 @@ SupportHub is an internal, multi-company support ticket system - an alternative 
 SupportHub/
 |-- SupportHub.sln
 |-- src/
-|   |-- SupportHub.Web/                  # Blazor Server app (frontend + hosting)
+|   |-- SupportHub.Web/                  # Blazor Web App (Server interactivity, frontend + hosting)
 |   |   |-- Program.cs
 |   |   |-- Pages/
 |   |   |-- Components/
@@ -151,15 +153,15 @@ SupportHub/
 | Entity | Key Fields & Notes |
 |---|---|
 | **Company** | Name, shared mailbox address, SLA config. Must be configurable via admin UI - no code change required to add/remove entities. |
-| **Division / Department** | Optional subdivision within a company (e.g., Origination, Processing, Underwriting, Post-Closing, Funding, App Support, Tech Support). Used as routing queues. |
+| **Division** | Optional subdivision within a company (e.g., Origination, Processing, Underwriting, Post-Closing, Funding, App Support, Tech Support). Used in backend routing and shown as Queue in the UI. |
 | **UserProfile** (from Azure AD) | Role (Super Admin, Admin, Agent), assigned companies. Sourced from Azure AD; no separate user registration. |
 | **UserCompanyAssignment** | Maps a user to a company. Agents only see data for assigned companies. |
-| **Ticket** | Company, Queue (Division), status, priority, assigned agent, SLA timestamps, source (email/portal/API), system/application affected, issue type, tags. |
-| **TicketMessage** | Body, sender, direction (inbound/outbound), reply-from metadata (shared mailbox in v1; agent-personal mode is future scope), external message ID for Graph API threading. |
+| **Ticket** | Company, Queue (Division), status, priority, assigned agent, SLA timestamps (`FirstResponseAt`, `ResolvedAt`, `ClosedAt`, `SlaPausedAt`, `TotalPausedMinutes`), source (email/portal/API), system/application affected, issue type, tags, AI metadata (`AiClassified`, `AiClassificationJson`). |
+| **TicketMessage** | Body, sender, direction (inbound/outbound), reply-from metadata (shared mailbox in v1), external message ID for Graph API threading. |
 | **TicketAttachment** | File path, original filename, MIME type, stored on network share, linked to ticket or message. |
 | **TicketTag** | Flexible tagging per ticket (e.g., `new-hire`, `termination`, `access-request`, `empower`, `salesforce`). Enables SOX audit filtering without schema changes. |
 | **InternalNote** | Tied to ticket, visible only to agents. |
-| **RoutingRule** | Configurable rules (domain match, keyword match, form field match) that auto-assign a ticket to a Queue (Division). Managed via admin UI - no code changes needed to adjust routing. |
+| **RoutingRule** | Configurable rules (domain match, keyword match, form field match) that auto-assign a ticket to a Division (displayed as Queue in the UI). Managed via admin UI - no code changes needed to adjust routing. |
 | **CannedResponse** | Scoped per company or global, title, body template. |
 | **KnowledgeBaseArticle** | Company-scoped, title, body (markdown), tags. |
 | **SlaPolicy** | Per company and/or priority: first response target, resolution target. |
@@ -172,7 +174,7 @@ SupportHub/
 ### Key Design Decisions
 
 - Multi-company isolation via `CompanyId` FK on all company-scoped entities - enforced at query/service layer, not separate databases.
-- `Division` acts as a routing queue - configurable by admins, no code change needed to add departments.
+- `Division` is the backend routing entity; the UI presents this as Queue for agents/admins.
 - `TicketTag` replaces rigid category enums to support audit use cases (`termination`, `new-hire`, `access-request`) without schema changes.
 - `RoutingRule` is a first-class entity managed by admins, not hard-coded - non-developers can adjust routing logic without engineer involvement.
 - AI classification (Azure OpenAI GPT-4o-mini) handles email tickets with insufficient structured data, using an image-capable model since users frequently submit screenshot-only tickets.

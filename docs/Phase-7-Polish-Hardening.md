@@ -1,4 +1,4 @@
-﻿# Phase 7 - Polish & Hardening (Week 13+)
+# Phase 7 - Polish & Hardening (Week 13+)
 
 > **Prerequisites:** Phases 0-6 complete. All core features are functional. This phase focuses on production readiness, performance, UX polish, audit logging, and documentation.
 
@@ -6,7 +6,7 @@
 
 ## Objective
 
-Prepare SupportHub for production use: add audit logging, improve error handling and resilience, optimize performance, polish the UI, and document everything. At the end of this phase, the system is ready for daily use by the support team.
+Prepare Ralis Support Hub for production use: add audit logging, improve error handling and resilience, optimize performance, polish the UI, and document everything. At the end of this phase, the system is ready for daily use by the support team.
 
 ---
 
@@ -236,7 +236,7 @@ public interface IAuditService
  - `X-Content-Type-Options: nosniff`
  - `X-Frame-Options: DENY`
  - `Referrer-Policy: strict-origin-when-cross-origin`
- - `Content-Security-Policy` appropriate for Blazor Server
+ - `Content-Security-Policy` appropriate for Blazor Web App (Server interactivity)
  - Enforce HTTPS in production
 
 5. **Rate Limiting:**
@@ -338,7 +338,6 @@ Create the following documents in the `docs/` folder:
  - [ ] Create ticket via portal -> verify it appears in ticket list
  - [ ] Send email to shared mailbox -> verify ticket is created
  - [ ] Reply to ticket from UI as shared mailbox -> verify customer receives email
- - [ ] Reply to ticket from UI as agent personal email -> verify
  - [ ] Customer replies by email -> verify message appended to ticket
  - [ ] Customer email reopens a closed ticket -> verify status change
  - [ ] Assign ticket -> verify status changes to Open if it was New

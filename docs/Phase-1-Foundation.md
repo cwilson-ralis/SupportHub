@@ -1,4 +1,4 @@
-﻿# Phase 1 - Foundation (Weeks 1-3)
+# Phase 1 - Foundation (Weeks 1-3)
 
 > **Prerequisites:** Read `Phase-0-Project-Overview.md` first. All conventions, naming, and structure defined there apply here.
 
@@ -16,7 +16,7 @@ Set up the solution structure, database, authentication, authorization, and basi
 
 1. Create a new .NET 10 solution named `SupportHub` using the structure defined in Phase 0.
 2. Create the following projects:
- - `SupportHub.Web` - Blazor Server App (use `blazorserver-empty` template or the .NET 10 Blazor Web App template with Server interactivity)
+ - `SupportHub.Web` - Blazor Web App (.NET 10) with Server interactivity (do not use the legacy standalone Blazor Server template)
  - `SupportHub.Api` - ASP.NET Core Web API (controllers, not minimal API)
  - `SupportHub.Core` - Class Library
  - `SupportHub.Infrastructure` - Class Library
@@ -78,7 +78,7 @@ public enum TicketStatus { New, Open, AwaitingCustomer, AwaitingAgent, OnHold, R
 public enum TicketPriority { Low, Medium, High, Urgent }
 public enum TicketSource { Email, Portal, Api }
 public enum MessageDirection { Inbound, Outbound }
-public enum ReplySenderType { SharedMailbox, AgentPersonal }
+public enum ReplySenderType { SharedMailbox } // v1 scope; personal mailbox mode is post-v1
 public enum SlaBreachType { FirstResponse, Resolution }
 public enum IssueType { AccessRequest, ErrorOrBug, HowToQuestion, Training, NewHire, Termination, Other }
 public enum RoutingConditionType { SenderDomain, SubjectKeyword, BodyKeyword, FormSystemApplication, FormIssueType }
@@ -118,7 +118,7 @@ Create the following entities in `SupportHub.Core/Entities/`. Business entities 
  - `bool IsActive`
  - Navigation: `ICollection<Division> Divisions`, `ICollection<Ticket> Tickets`, `ICollection<UserCompanyAssignment> UserAssignments`, `ICollection<SlaPolicy> SlaPolicies`, `ICollection<CannedResponse> CannedResponses`, `ICollection<KnowledgeBaseArticle> KnowledgeBaseArticles`, `ICollection<RoutingRule> RoutingRules`
 
-2. **Division** (routing queue / department within a company - e.g., Tech Support, App Support, New Hire/Termination)
+2. **Division** (routing unit within a company - e.g., Tech Support, App Support, New Hire/Termination)
  - `int CompanyId` (FK)
  - `string Name` (required, max 200)
  - `string? Description`
@@ -153,7 +153,10 @@ Create the following entities in `SupportHub.Core/Entities/`. Business entities 
  - `DateTimeOffset? FirstResponseAt`
  - `DateTimeOffset? ResolvedAt`
  - `DateTimeOffset? ClosedAt`
+ - `DateTimeOffset? SlaPausedAt` (set when SLA is paused, e.g., awaiting customer)
+ - `int TotalPausedMinutes` (accumulated paused minutes for future SLA logic)
  - `bool AiClassified` (whether AI classification was applied)
+ - `string? AiClassificationJson` (raw AI output JSON for audit/tuning)
  - `byte[] RowVersion` (concurrency token)
  - Navigation: `Company Company`, `Division? Division`, `UserProfile? AssignedAgent`, `ICollection<TicketMessage> Messages`, `ICollection<TicketAttachment> Attachments`, `ICollection<TicketTag> Tags`, `ICollection<InternalNote> InternalNotes`, `ICollection<SlaBreachRecord> SlaBreaches`, `CustomerSatisfactionRating? SatisfactionRating`
 
@@ -204,7 +207,7 @@ Create the following entities in `SupportHub.Core/Entities/`. Business entities 
  - `bool IsPublished`
  - Navigation: `Company Company`, `UserProfile Author`
 
-13. **RoutingRule** (admin-configurable rules that assign tickets to a Queue (Division) without code changes)
+13. **RoutingRule** (admin-configurable rules that assign tickets to a Division (displayed as Queue in the UI) without code changes)
  - `int CompanyId` (FK)
  - `string Name` (required, max 200)
  - `bool IsEnabled`
@@ -455,5 +458,4 @@ public interface IUserService
 - [ ] Health check returns 200 when DB is reachable
 - [ ] CI pipeline builds and runs tests successfully
 - [ ] All services have unit tests for happy path and key error cases
-
 

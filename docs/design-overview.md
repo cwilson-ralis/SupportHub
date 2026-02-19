@@ -1,4 +1,4 @@
-﻿# Project Hero - Tech Support Hub
+# Ralis Support Hub - Tech Support Platform
 ## Architecture & Build Plan
 *Updated per Kickoff Meeting*
 
@@ -6,7 +6,7 @@
 
 ## Project Overview
 
-Project Hero is an internally developed Support Hub built to replace the fragmented collection of third-party tools (Zendesk, ServiceNow, email inboxes) currently used across company entities. The goal is to unify all support operations into a single, centralized platform that the internal IT/dev team owns, can customize, and can extend over time.
+Ralis Support Hub is an internally developed support platform built to replace the fragmented collection of third-party tools (Zendesk, ServiceNow, email inboxes) currently used across company entities. The goal is to unify all support operations into a single, centralized platform that the internal IT/dev team owns, can customize, and can extend over time.
 
 The platform will serve as a hub for:
 - Support ticketing (Phase 2)
@@ -44,20 +44,20 @@ The Company entity list must be data-driven and maintainable by admins without c
 
 | Component | Technology / Decision |
 |---|---|
-| Frontend | Blazor Server (.NET 10) with MudBlazor |
+| Frontend | Blazor Web App (.NET 10) with Server interactivity and MudBlazor |
 | Backend API | ASP.NET Core Web API (.NET 10) |
 | Database | SQL Server - on-premises (company data center). Cloud storage was evaluated and ruled out due to cost, especially for file attachments. |
 | Authentication | Azure AD via Microsoft.Identity.Web. All users authenticate with their Microsoft identity (M365 accounts). |
 | Authorization | Role/group-based (Super Admin, Admin, Agent) enforced at the API/service layer. |
 | Email | Microsoft Graph API, connecting to M365 shared mailboxes. |
-| Real-time | SignalR (built into Blazor Server, available when needed). |
+| Real-time | SignalR (available through Blazor Web App Server interactivity when needed). |
 | File Storage | On-premises network share for v1, abstracted behind `IFileStorageService` to allow future migration to Azure Blob. |
 | Background Jobs | Hangfire - email polling, SLA monitoring, scheduled reports. |
 | AI / Classification | Lightweight LLM (e.g., Azure OpenAI GPT-4o-mini) for intelligent ticket routing and classification. Image-capable model required to handle screenshot-only submissions. |
 | ORM | Entity Framework Core |
 | Reporting | Embedded dashboards (MudBlazor Charts or Radzen components) |
 | CI/CD | Azure DevOps Pipelines |
-| Project Tracking | Azure DevOps (Ralis) - dedicated project board for Project Hero |
+| Project Tracking | Azure DevOps (Ralis) - dedicated project board for Ralis Support Hub |
 
 ---
 
@@ -77,14 +77,14 @@ The Company entity list must be data-driven and maintainable by admins without c
 | Entity | Key Fields & Notes |
 |---|---|
 | **Company** | Name, shared mailbox address, SLA config, branding. Must be configurable via admin UI - no code change required to add/remove entities. |
-| **Division / Department** | Optional subdivision within a company (e.g., Origination, Processing, Underwriting, Post-Closing, Funding, App Support, Tech Support). Used for queue routing. |
+| **Division** | Optional subdivision within a company (e.g., Origination, Processing, Underwriting, Post-Closing, Funding, App Support, Tech Support). Used in backend routing and shown as Queue in the UI. |
 | **User** (from Azure AD) | Role (Super Admin, Admin, Agent), assigned companies. Sourced from Azure AD; no separate user registration. |
-| **Ticket** | Company, status, priority, assigned agent, SLA timestamps, source (email/portal/API), tags, routing queue. |
-| **TicketMessage** | Body, sender, direction (inbound/outbound), reply-from metadata (shared mailbox in v1; agent-personal mode is future scope), timestamps. Supports rich text and embedded images. |
+| **Ticket** | Company, status, priority, assigned agent, SLA timestamps (`FirstResponseAt`, `ResolvedAt`, `ClosedAt`, `SlaPausedAt`, `TotalPausedMinutes`), source (email/portal/API), tags, routing division (shown as Queue in UI), AI metadata (`AiClassified`, `AiClassificationJson`). |
+| **TicketMessage** | Body, sender, direction (inbound/outbound), reply-from metadata (shared mailbox in v1), timestamps. Supports rich text and embedded images. |
 | **TicketAttachment** | File path, original filename, MIME type, stored on network share, linked to ticket or message. |
 | **InternalNote** | Tied to ticket, visible only to agents. |
 | **TicketTag** | Flexible tagging per ticket (e.g., `new-hire`, `termination`, `access-request`, `empower`, `salesforce`). Enables audit filtering. |
-| **RoutingRule** | Configurable rules (domain match, keyword match, entity match) that auto-assign a ticket to a queue/department. Managed via admin UI. |
+| **RoutingRule** | Configurable rules (domain match, keyword match, entity match) that auto-assign a ticket to a division (displayed as Queue in the UI). Managed via admin UI. |
 | **CannedResponse** | Scoped per company or global, title, body template. |
 | **KnowledgeBaseArticle** | Company-scoped, title, body (markdown), tags. Future: RAG integration with SharePoint. |
 | **SlaPolicy** | Per company and/or priority: first response target, resolution target. v1 uses simple elapsed time. |
@@ -149,10 +149,11 @@ If no rule matches, the ticket falls into a configurable default queue (General)
 
 ### AI-Assisted Classification
 
-For email-submitted tickets lacking structured fields, an AI classification step (using a lightweight model such as GPT-4o-mini via Azure OpenAI) will analyze the subject, body, and any attached images to suggest a routing queue and relevant tags. Key requirements:
+For email-submitted tickets lacking structured fields, an AI classification step (using GPT-4o-mini via Azure OpenAI) will analyze the subject, body, and any attached images to suggest a routing queue and relevant tags. Key requirements:
 
 - Must use an image-capable model - users frequently submit tickets consisting only of a screenshot with no descriptive text.
-- In v1, AI classification runs only when routing rules produce no match for email-originated tickets.
+- In Phase 3, AI classification is the primary router for email-originated tickets.
+- After Phase 4 is implemented, routing rules evaluate first and AI runs as a fallback for unstructured/no-match email tickets.
 - Pre-routing AI can be evaluated in a future phase behind a feature flag.
 - Cost should be minimized by using the smallest appropriate model and only calling the API when needed (e.g., email-sourced tickets without structured metadata).
 - AI routing decisions should be logged for audit and for future model fine-tuning.
@@ -237,7 +238,7 @@ Explicitly raised by the team during kickoff as a non-negotiable requirement.
 ## Phased Build Order
 
 ### Phase 1 - Foundation 
-- Solution structure: Blazor Server project, ASP.NET Core Web API project, shared class library, EF Core data project
+- Solution structure: Blazor Web App project (Server interactivity), ASP.NET Core Web API project, shared class library, EF Core data project
 - Azure AD authentication and role-based authorization (Super Admin, Admin, Agent)
 - Company and entity management (data-driven, admin-configurable)
 - Database schema and EF Core migrations
@@ -310,7 +311,7 @@ Explicitly raised by the team during kickoff as a non-negotiable requirement.
 
 - **WARNING Graph API permissions** - Mail.ReadWrite admin consent required for shared mailboxes. IT must be involved early. This is a hard dependency for Phase 3.
 - **Email threading reliability** - A ticket ID token injected into the `X-SupportHub-TicketId` header is more reliable than subject line matching alone. Subject matching is the fallback only.
-- **AI routing accuracy** - The rules engine is the primary router; AI is a fallback. Early monitoring of AI classification decisions is important to tune rules and catch misroutes before they become a pattern.
+- **AI routing accuracy** - During Phase 3, AI is the primary router for email tickets; once Phase 4 is complete, rules become primary and AI fallback. Early monitoring of AI classification decisions is important to tune rules and catch misroutes before they become a pattern.
 - **Image-only ticket submissions** - Users frequently submit tickets as screenshots with no text. The AI classification model must be image-capable to handle these. Rule-based routing will miss them entirely.
 - **Ticket data quality** - The web form enforces required fields; email submissions do not. A proportion of email tickets will always require manual triage. Consider an auto-reply prompting email submitters to use the web form.
 - **SLA clock pausing** - v1 uses simple elapsed time. The data model should anticipate a future "waiting on customer" clock-pause state so it can be added without a breaking migration.
@@ -323,7 +324,7 @@ Explicitly raised by the team during kickoff as a non-negotiable requirement.
 
 ## Immediate Next Steps
 
-- **John Year:** Spin up Azure DevOps (Ralis) project board for Project Hero sprint tracking.
+- **John Year:** Spin up Azure DevOps (Ralis) project board for Ralis Support Hub sprint tracking.
 - **Christopher Wilson:** Finalize architecture document (GitHub repo) incorporating decisions from this meeting.
 - **Frank / Chris / Brandon:** Review design and flag any technical blockers before sprint planning.
 - **Jason / Kimberly:** Provide a representative sample of current ticket types, volumes, and common routing scenarios to inform rules engine configuration.

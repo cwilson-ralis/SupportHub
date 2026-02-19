@@ -1,6 +1,6 @@
-﻿# Phase 5 - SLA & Customer Satisfaction
+# Phase 5 - SLA & Customer Satisfaction
 
-> **Prerequisites:** Phases 0-4 complete. Tickets are being created via portal and email. Routing engine is assigning tickets to divisions. `FirstResponseAt` and `ResolvedAt` are being tracked on tickets. Hangfire is running for background jobs.
+> **Prerequisites:** Phases 0-4 complete. Tickets are being created via portal and email. Routing engine is assigning tickets to divisions. `FirstResponseAt`, `ResolvedAt`, `SlaPausedAt`, and `TotalPausedMinutes` are present on `Ticket`. Hangfire is running for background jobs.
 
 ---
 
@@ -97,6 +97,8 @@ public enum SlaUrgency
 ```
 
 3. **Implement `SlaCalculationService`:**
+
+ **v1 scope note:** SLA calculations remain simple elapsed wall-clock time. Keep `SlaPausedAt` and `TotalPausedMinutes` populated for future pause-aware logic, but do not subtract paused time in v1 breach calculations.**
 
  **Calculation logic:**
 

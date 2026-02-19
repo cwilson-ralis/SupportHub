@@ -1,4 +1,4 @@
-﻿# Phase 6 - Audit Reporting & Knowledge Base
+# Phase 6 - Audit Reporting & Knowledge Base
 
 > **Prerequisites:** Phases 0-5 complete. Full ticket lifecycle with email, SLA, satisfaction tracking, and routing is operational. Data is flowing for reporting.
 
@@ -268,6 +268,7 @@ public interface IReportingService
 
 3. **Implement `ReportingService`:**
  - All queries respect company access (user's assigned companies, SuperAdmin sees all)
+ - Standard operational reports must respect global query filters (soft-deleted tickets remain excluded)
  - Use EF Core projections (`.Select()`) for efficiency - do NOT load full entities
  - For date-range aggregations, group by date in the query
  - For the "previous period" comparison in DashboardSummary: if the filter is 30 days, compare to the prior 30 days
@@ -449,6 +450,7 @@ GET /api/v1/reports/compliance/export?{same filters} -> CSV export of compliance
  - Test: SLA performance rates are calculated correctly
  - Test: unattended tickets correctly identifies stale, unassigned, and no-response tickets
  - Test: date range filtering works
+ - Test: soft-deleted tickets are excluded from standard operational reports
  - Test: company access filtering works
 
 3. **Unit tests for `ComplianceReportingService`:**
@@ -482,5 +484,4 @@ GET /api/v1/reports/compliance/export?{same filters} -> CSV export of compliance
 - [ ] SOX compliance report is exportable to CSV for submission to auditors
 - [ ] Well-known compliance tags (`termination`, `new-hire`, `access-request`) have dedicated report shortcuts
 - [ ] All new services have unit tests
-
 

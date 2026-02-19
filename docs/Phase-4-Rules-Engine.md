@@ -1,4 +1,4 @@
-﻿# Phase 4 - Rules Engine & Routing UI
+# Phase 4 - Rules Engine & Routing UI
 
 > **Prerequisites:** Phases 0-3 complete. Divisions, RoutingRule entities, and TicketTag entities exist in the database (created in Phase 1). Tickets are being created via portal and email. Email AI classification is operational.
 
@@ -7,6 +7,8 @@
 ## Objective
 
 Build an admin-configurable routing rules engine that automatically assigns incoming tickets to the correct Queue (Division) without developer intervention. Admins (including David, Jason, and Kim) must be able to create, edit, reorder, enable/disable rules, and manage queues through the UI - no code changes required. At the end of this phase, ticket routing is largely automatic.
+
+This phase intentionally changes email routing order from Phase 3 AI-first behavior to rules-first behavior, with AI used only as fallback when no rule matches.
 
 ---
 
@@ -143,7 +145,7 @@ public record RoutingResult(
 4. **Integrate routing engine into email ingestion:**
 
  In `EmailIngestionService` (Phase 3, Task 3.2):
- - After creating a new ticket from email, call `IRoutingEngine.EvaluateAsync`
+ - After creating a new ticket from email, call `IRoutingEngine.EvaluateAsync` (this supersedes Phase 3 AI-first routing order)
  - If routing matches, apply result before AI classification step
  - If routing has no match, proceed to AI classification (Phase 3, Task 3.5)
 
@@ -250,5 +252,4 @@ This page gives a real-time view of the current ticket load across all queues.
 - [ ] Admins can manage divisions/queues (create, edit, deactivate) via the UI
 - [ ] Queue overview page shows real-time ticket load per division
 - [ ] All new services have unit tests
-
 
